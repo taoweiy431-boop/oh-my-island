@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make expanded session cards show real session titles instead of always using the project folder name. Codex sessions should read user-assigned titles from Codex's local session index, and the design should leave a clear extension point for future providers such as Claude Code.
+Make expanded session cards show real session titles without abandoning the existing project-first header structure. Codex sessions should read user-assigned titles from Codex's local session index, and the design should leave a clear extension point for future providers such as Claude Code.
 
 ## Problem Summary
 
@@ -14,22 +14,23 @@ Codex already persists user-defined session titles in `~/.codex/session_index.js
 
 ### Card Header
 
-- Primary title shows the provider session title when available.
-- If no provider session title exists, primary title falls back to the full session ID.
-- Project name no longer occupies the primary title slot.
-- Project/path context remains visible as secondary information.
+- Keep the current single-line, project-first structure.
+- The header should read as `project #session-label · #short-id` when a provider title exists.
+- If no provider session title exists, collapse to `project #short-id` without rendering an empty separator or duplicating the short ID.
+- Do not add an extra line just to show the title.
+- Project/path context remains the leading label, preserving the original information architecture.
 
 ### Session ID
 
-- Session ID remains visible and useful.
-- The old short duplicate suffix is replaced by a dedicated session-ID affordance.
-- The session-ID affordance should be easy to copy from the UI.
-- The initial implementation can show a compact truncated ID such as `#019d...` plus a copy button while keeping the full ID in the copy payload and tooltip.
+- A short session ID remains visibly present in the header.
+- The short ID should appear as its own compact segment after the session label, separated by a light divider such as `·`.
+- A copy affordance should live immediately next to the short ID so it is clear that the control copies the full session ID rather than the session title.
+- The UI may continue showing a compact short ID such as `#beaf`, while the copy action and tooltip expose the full session ID.
 
 ### Consistency
 
 - The UI should not special-case Codex inside the view layer.
-- Session cards should consume a provider-agnostic "display title" model.
+- Session cards should consume a provider-agnostic session-title model and compose it into the existing header shape.
 
 ## Design Options Considered
 
@@ -49,7 +50,7 @@ Cons:
 
 ### Option 2: Provider-agnostic session title layer
 
-Add a session-title abstraction in the model/state layer. Providers populate an optional `sessionTitle`, and UI reads a single `displayTitle`.
+Add a session-title abstraction in the model/state layer. Providers populate an optional `sessionTitle`, and UI composes that with the existing project label and short-ID helpers.
 
 Pros:
 
@@ -78,7 +79,7 @@ Cons:
 
 Use Option 2.
 
-It solves the immediate Codex problem while creating a clean seam for future providers. It also keeps the UI simple: the card reads one field for the title and one field for the session ID control.
+It solves the immediate Codex problem while creating a clean seam for future providers. It also supports the conservative UI direction: preserve the original project-first line, add the provider title into the existing suffix area, and keep the short ID plus copy affordance visibly tied together.
 
 ## Proposed Architecture
 
@@ -91,14 +92,16 @@ Extend the session snapshot model with provider-agnostic title fields:
 - `sessionTitleSource: SessionTitleSource?`
   Optional enum to track where the title came from.
 
-Add computed display helpers:
+Add computed display helpers oriented around the existing header layout:
 
-- `displayTitle`
-  Returns `sessionTitle` when present and non-empty, otherwise returns the full session ID supplied by callers.
 - `projectDisplayName`
-  Keeps the current folder-derived naming behavior for secondary UI.
+  Keeps the current folder-derived naming behavior for the leading header label.
+- `sessionLabel`
+  Returns the provider title when present and non-empty, otherwise `nil`.
+- `shortSessionID`
+  Returns the compact inline ID token used in the header.
 
-This separates "what is this session called?" from "which project folder is it in?"
+This separates "which project is this session attached to?" from "does this session have a user-facing title?" and "which ID token should the header expose for copying/debugging?"
 
 ### 2. Provider title resolver layer
 
@@ -129,16 +132,22 @@ The lookup should be cheap and isolated. If the index file is missing, malformed
 
 Update the session card header to use:
 
-- primary title: `session.sessionTitle` when present, otherwise full session ID
-- secondary/project line: current project/folder-derived label
+- leading project label: current project/folder-derived name
+- optional inline session label: `#session-title`
+- inline short ID segment: `#beaf`-style token
+- inline copy affordance beside the short ID
 
-Replace the current duplicate-name suffix behavior:
+The new header behavior should be:
 
-- remove the "show first 4 chars only when names collide" rule
-- always render a dedicated session-ID control
-- allow copying the full session ID from that control
+- title present: `project #session-label · #beaf [copy]`
+- title absent: `project #beaf [copy]`
 
-This makes the session ID consistently available instead of appearing only in duplicate cases.
+Additional UI rules:
+
+- keep the layout on one line in both expanded and collapsed representations where space allows
+- remove the extra title line introduced by the more aggressive title-first experiment
+- preserve the existing project-first visual rhythm rather than replacing it with a session-title-first layout
+- allow copying the full session ID from the copy affordance even though only the short token is shown inline
 
 ## Data Flow
 
@@ -148,8 +157,8 @@ This makes the session ID consistently available instead of appearing only in du
 2. It extracts the Codex session ID as it does today.
 3. It queries the Codex title store using that session ID.
 4. If a `thread_name` exists, it stores it in `sessionTitle`.
-5. The card view renders that as the primary title.
-6. The session-ID control remains available for copy/debugging.
+5. The card view renders `projectDisplayName` first, then inserts `#session-label` when available.
+6. The short session ID and copy affordance remain visible for copy/debugging.
 
 ### Future providers
 
@@ -161,6 +170,7 @@ Each provider can later add its own resolver without changing card rendering rul
 - Malformed JSON lines: skip bad lines, continue scanning.
 - Duplicate entries for the same session ID: use the newest matching entry.
 - Empty or whitespace-only titles: treat as no title.
+- Very long titles: truncate inline without pushing the short ID and copy affordance off-screen when avoidable.
 
 ## Testing Strategy
 
@@ -178,17 +188,19 @@ Add focused tests for:
 
 Add tests for display helpers:
 
-- title present -> title used as primary label
-- title absent -> full session ID used as primary label
-- project display name still available as secondary info
+- title present -> header renders `project #title · #short-id`
+- title absent -> header renders `project #short-id` with no duplicate separator
+- copy affordance remains visually associated with the short ID
+- project display name remains the leading header label
 
 ### Manual verification
 
 Verify in a live Codex setup:
 
-- named Codex sessions display their assigned names
-- unnamed Codex sessions display session IDs instead of project name
-- project/folder context is still visible
+- named Codex sessions display as `project #session-label · #short-id`
+- unnamed Codex sessions display as `project #short-id`
+- the copy icon is read as belonging to the ID, not the title
+- project/folder context is still visible first
 - session-ID control copies the full ID
 
 ## Non-goals
@@ -201,13 +213,14 @@ Verify in a live Codex setup:
 
 - Codex index format may evolve. Mitigation: keep parser narrow and tolerant.
 - Session index may lag behind transcript creation. Mitigation: refresh title lookup during later event handling, not discovery only.
-- Full session IDs are visually long. Mitigation: show truncated text in UI, but copy the full ID.
+- Very long titles may compete with the short ID for horizontal space. Mitigation: truncate the title segment first and keep the short ID plus copy affordance readable.
+- Two inline `#` segments may feel noisy if styled identically. Mitigation: separate title and short ID with a lighter divider and keep the ID styling more compact.
 
 ## Implementation Outline
 
 1. Add provider-agnostic title fields and display helpers to session state.
 2. Add a Codex title reader for `session_index.jsonl`.
 3. Populate Codex session titles during discovery and later updates.
-4. Update session card rendering to use title-first semantics.
-5. Replace duplicate-only `#019d` display with a consistent session-ID control and copy action.
+4. Update session card rendering to preserve the project-first header while inserting the optional session title inline.
+5. Replace duplicate-only `#019d` behavior with a consistent short-ID segment and copy action.
 6. Add tests around Codex title parsing and fallback behavior.
