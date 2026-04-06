@@ -8,7 +8,7 @@ struct CodeIslandApp: App {
     var body: some Scene {
         MenuBarExtra("CodeIsland", systemImage: "sparkle") {
             VStack(alignment: .leading) {
-                Text("CodeIsland v1.0")
+                Text("CodeIsland v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
                     .font(.headline)
                 Text("Socket: /tmp/codeisland-\(getuid()).sock")
                     .font(.caption)
@@ -22,6 +22,12 @@ struct CodeIslandApp: App {
                 SettingsWindowController.shared.show()
             }
             .keyboardShortcut(",")
+
+            Divider()
+
+            Button(l10n["check_for_updates"]) {
+                UpdateChecker.shared.checkForUpdates(silent: false)
+            }
 
             Divider()
 

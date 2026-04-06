@@ -54,18 +54,23 @@ final class L10n: ObservableObject {
         // Behavior
         "display_section": "Display",
         "hide_in_fullscreen": "Hide in Fullscreen",
+        "hide_in_fullscreen_desc": "Automatically hide panel when any app enters fullscreen mode",
         "hide_when_no_session": "Auto-hide When No Active Session",
+        "hide_when_no_session_desc": "Hide panel completely when no AI agents are running",
         "smart_suppress": "Smart Suppress",
         "smart_suppress_desc": "Don't auto-expand panel when agent's terminal tab is in foreground",
         "collapse_on_mouse_leave": "Auto-collapse on Mouse Leave",
+        "collapse_on_mouse_leave_desc": "Collapse expanded panel back to notch when mouse moves away",
         "sessions": "Sessions",
         "session_cleanup": "Idle Session Cleanup",
+        "session_cleanup_desc": "Automatically remove sessions with no activity for the set duration",
         "no_cleanup": "Never",
         "10_minutes": "10 Minutes",
         "30_minutes": "30 Minutes",
         "1_hour": "1 Hour",
         "2_hours": "2 Hours",
         "tool_history_limit": "Tool History Limit",
+        "tool_history_limit_desc": "Max number of recent tool calls shown per session",
 
         // Appearance
         "panel": "Panel",
@@ -124,9 +129,19 @@ final class L10n: ObservableObject {
 
         // Menu
         "settings_ellipsis": "Settings...",
+        "check_for_updates": "Check for Updates...",
         "reinstall_hooks": "Reinstall Hooks",
         "remove_hooks": "Remove Hooks",
         "quit": "Quit",
+
+        // Update
+        "update_available_title": "Update Available",
+        "update_available_body": "CodeIsland %@ is available (current: %@). Would you like to download it?",
+        "download_update": "Download",
+        "later": "Later",
+        "no_update_title": "Up to Date",
+        "no_update_body": "CodeIsland %@ is the latest version.",
+        "ok": "OK",
 
         // NotchPanel
         "mute": "Mute",
@@ -173,18 +188,23 @@ final class L10n: ObservableObject {
         // Behavior
         "display_section": "显示",
         "hide_in_fullscreen": "全屏时隐藏",
+        "hide_in_fullscreen_desc": "当任意应用进入全屏模式时自动隐藏面板",
         "hide_when_no_session": "无活跃会话时自动隐藏",
+        "hide_when_no_session_desc": "没有 AI Agent 运行时完全隐藏面板",
         "smart_suppress": "智能抑制",
         "smart_suppress_desc": "Agent 所在终端标签页在前台时不自动展开面板",
         "collapse_on_mouse_leave": "鼠标离开时自动收起",
+        "collapse_on_mouse_leave_desc": "鼠标移出展开的面板后自动收回到刘海状态",
         "sessions": "会话",
         "session_cleanup": "空闲会话清理",
+        "session_cleanup_desc": "自动移除超过指定时间没有活动的会话",
         "no_cleanup": "不清理",
         "10_minutes": "10 分钟",
         "30_minutes": "30 分钟",
         "1_hour": "1 小时",
         "2_hours": "2 小时",
         "tool_history_limit": "工具历史上限",
+        "tool_history_limit_desc": "每个会话显示的最近工具调用数量上限",
 
         // Appearance
         "panel": "面板",
@@ -243,9 +263,19 @@ final class L10n: ObservableObject {
 
         // Menu
         "settings_ellipsis": "设置...",
+        "check_for_updates": "检查更新...",
         "reinstall_hooks": "重新安装 Hooks",
         "remove_hooks": "卸载 Hooks",
         "quit": "退出",
+
+        // Update
+        "update_available_title": "发现新版本",
+        "update_available_body": "CodeIsland %@ 已发布（当前版本：%@），是否前往下载？",
+        "download_update": "前往下载",
+        "later": "稍后",
+        "no_update_title": "已是最新版本",
+        "no_update_body": "CodeIsland %@ 已是最新版本。",
+        "ok": "好",
 
         // NotchPanel
         "mute": "静音",

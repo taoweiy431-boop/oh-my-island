@@ -174,28 +174,43 @@ private struct BehaviorPage: View {
     var body: some View {
         Form {
             Section(l10n["display_section"]) {
-                Toggle(l10n["hide_in_fullscreen"], isOn: $hideInFullscreen)
-                Toggle(l10n["hide_when_no_session"], isOn: $hideWhenNoSession)
+                Toggle(isOn: $hideInFullscreen) {
+                    Text(l10n["hide_in_fullscreen"])
+                    Text(l10n["hide_in_fullscreen_desc"])
+                }
+                Toggle(isOn: $hideWhenNoSession) {
+                    Text(l10n["hide_when_no_session"])
+                    Text(l10n["hide_when_no_session_desc"])
+                }
                 Toggle(isOn: $smartSuppress) {
                     Text(l10n["smart_suppress"])
                     Text(l10n["smart_suppress_desc"])
                 }
-                Toggle(l10n["collapse_on_mouse_leave"], isOn: $collapseOnMouseLeave)
+                Toggle(isOn: $collapseOnMouseLeave) {
+                    Text(l10n["collapse_on_mouse_leave"])
+                    Text(l10n["collapse_on_mouse_leave_desc"])
+                }
             }
 
             Section(l10n["sessions"]) {
-                Picker(l10n["session_cleanup"], selection: $sessionTimeout) {
+                Picker(selection: $sessionTimeout) {
                     Text(l10n["no_cleanup"]).tag(0)
                     Text(l10n["10_minutes"]).tag(10)
                     Text(l10n["30_minutes"]).tag(30)
                     Text(l10n["1_hour"]).tag(60)
                     Text(l10n["2_hours"]).tag(120)
+                } label: {
+                    Text(l10n["session_cleanup"])
+                    Text(l10n["session_cleanup_desc"])
                 }
-                Picker(l10n["tool_history_limit"], selection: $maxToolHistory) {
+                Picker(selection: $maxToolHistory) {
                     Text("10").tag(10)
                     Text("20").tag(20)
                     Text("50").tag(50)
                     Text("100").tag(100)
+                } label: {
+                    Text(l10n["tool_history_limit"])
+                    Text(l10n["tool_history_limit_desc"])
                 }
             }
         }
@@ -228,40 +243,26 @@ private struct HooksPage: View {
                 ForEach(ConfigInstaller.allCLIs, id: \.source) { cli in
                     let installed = cliStatuses[cli.source] ?? false
                     let exists = ConfigInstaller.cliExists(source: cli.source)
-                    HStack(spacing: 8) {
-                        if let icon = cliIcon(source: cli.source, size: 20) {
-                            Image(nsImage: icon)
-                                .resizable()
-                                .frame(width: 20, height: 20)
-                        }
-                        Text(cli.name)
-                        Spacer()
-                        Circle()
-                            .fill(installed ? Color.green : (exists ? Color.red : Color.gray))
-                            .frame(width: 8, height: 8)
-                        Text(statusText(installed: installed, exists: exists))
-                            .foregroundColor(installed ? .secondary : (exists ? .red : .gray))
-                            .font(.caption)
-                    }
+                    CLIStatusRow(
+                        name: cli.name,
+                        source: cli.source,
+                        configPath: "~/\(cli.configPath)",
+                        fullPath: cli.fullPath,
+                        installed: installed,
+                        exists: exists
+                    )
                 }
                 // OpenCode (plugin-based, not hooks)
                 let ocInstalled = cliStatuses["opencode"] ?? false
                 let ocExists = ConfigInstaller.cliExists(source: "opencode")
-                HStack(spacing: 8) {
-                    if let icon = cliIcon(source: "opencode", size: 20) {
-                        Image(nsImage: icon)
-                            .resizable()
-                            .frame(width: 20, height: 20)
-                    }
-                    Text("OpenCode")
-                    Spacer()
-                    Circle()
-                        .fill(ocInstalled ? Color.green : (ocExists ? Color.red : Color.gray))
-                        .frame(width: 8, height: 8)
-                    Text(statusText(installed: ocInstalled, exists: ocExists))
-                        .foregroundColor(ocInstalled ? .secondary : (ocExists ? .red : .gray))
-                        .font(.caption)
-                }
+                CLIStatusRow(
+                    name: "OpenCode",
+                    source: "opencode",
+                    configPath: "~/.config/opencode/config.json",
+                    fullPath: NSHomeDirectory() + "/.config/opencode/config.json",
+                    installed: ocInstalled,
+                    exists: ocExists
+                )
             }
 
             Section(l10n["management"]) {
@@ -306,6 +307,57 @@ private struct HooksPage: View {
         }
         .formStyle(.grouped)
         .onAppear { refreshCLIStatuses() }
+    }
+}
+
+private struct CLIStatusRow: View {
+    @ObservedObject private var l10n = L10n.shared
+    let name: String
+    let source: String
+    let configPath: String
+    let fullPath: String
+    let installed: Bool
+    let exists: Bool
+
+    private func statusText() -> String {
+        installed ? l10n["activated"] : (exists ? l10n["not_installed"] : l10n["not_detected"])
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                if let icon = cliIcon(source: source, size: 20) {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 20, height: 20)
+                }
+                Text(name)
+                Spacer()
+                Circle()
+                    .fill(installed ? Color.green : (exists ? Color.red : Color.gray))
+                    .frame(width: 8, height: 8)
+                Text(statusText())
+                    .foregroundColor(installed ? .secondary : (exists ? .red : .gray))
+                    .font(.caption)
+            }
+            if installed {
+                HStack(spacing: 2) {
+                    Text(configPath)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                    Button {
+                        let url = URL(fileURLWithPath: fullPath)
+                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                    } label: {
+                        Image(systemName: "arrow.right.circle")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.blue)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.leading, 28)
+            }
+        }
     }
 }
 
@@ -556,7 +608,7 @@ private struct AboutPage: View {
                 VStack(spacing: 6) {
                     Text("CodeIsland")
                         .font(.system(size: 26, weight: .bold))
-                    Text("Version 1.0")
+                    Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                 }

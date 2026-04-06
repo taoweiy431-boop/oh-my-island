@@ -58,6 +58,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
 
+        // Check for updates silently after a short delay
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            UpdateChecker.shared.checkForUpdates(silent: true)
+        }
+
         // Boot animation: brief expand to confirm app is running
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000)
