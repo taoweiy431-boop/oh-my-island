@@ -356,35 +356,12 @@ final class AppState {
     /// Recompute cached status/source/counts from sessions in a single O(n) pass.
     /// Call after any mutation to `sessions` or session status.
     private func refreshDerivedState() {
-        var highestStatus: AgentStatus = .idle
-        var source = "claude"
-        var active = 0
-        for s in sessions.values {
-            if s.status != .idle { active += 1 }
-            switch s.status {
-            case .waitingApproval:
-                highestStatus = .waitingApproval; source = s.source
-            case .waitingQuestion:
-                if highestStatus != .waitingApproval {
-                    highestStatus = .waitingQuestion; source = s.source
-                }
-            case .running:
-                if highestStatus == .idle || highestStatus == .processing {
-                    highestStatus = .running; source = s.source
-                }
-            case .processing:
-                if highestStatus == .idle {
-                    highestStatus = .processing; source = s.source
-                }
-            default: break
-            }
-        }
+        let summary = deriveSessionSummary(from: sessions)
         // Only assign when changed (avoids unnecessary @Observable notifications)
-        if status != highestStatus { status = highestStatus }
-        if primarySource != source { primarySource = source }
-        if activeSessionCount != active { activeSessionCount = active }
-        let total = sessions.count
-        if totalSessionCount != total { totalSessionCount = total }
+        if status != summary.status { status = summary.status }
+        if primarySource != summary.primarySource { primarySource = summary.primarySource }
+        if activeSessionCount != summary.activeSessionCount { activeSessionCount = summary.activeSessionCount }
+        if totalSessionCount != summary.totalSessionCount { totalSessionCount = summary.totalSessionCount }
     }
 
     func handleEvent(_ event: HookEvent) {

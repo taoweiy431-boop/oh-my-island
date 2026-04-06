@@ -158,6 +158,69 @@ public struct SessionSnapshot {
     }
 }
 
+public struct SessionSummary {
+    public let status: AgentStatus
+    public let primarySource: String
+    public let activeSessionCount: Int
+    public let totalSessionCount: Int
+
+    public init(status: AgentStatus, primarySource: String, activeSessionCount: Int, totalSessionCount: Int) {
+        self.status = status
+        self.primarySource = primarySource
+        self.activeSessionCount = activeSessionCount
+        self.totalSessionCount = totalSessionCount
+    }
+}
+
+public func deriveSessionSummary(from sessions: [String: SessionSnapshot]) -> SessionSummary {
+    var highestStatus: AgentStatus = .idle
+    var source = "claude"
+    var active = 0
+    var mostRecentIdleSource: (source: String, time: Date)?
+
+    for session in sessions.values {
+        if session.status != .idle {
+            active += 1
+        } else if mostRecentIdleSource == nil || session.lastActivity > mostRecentIdleSource!.time {
+            mostRecentIdleSource = (session.source, session.lastActivity)
+        }
+
+        switch session.status {
+        case .waitingApproval:
+            highestStatus = .waitingApproval
+            source = session.source
+        case .waitingQuestion:
+            if highestStatus != .waitingApproval {
+                highestStatus = .waitingQuestion
+                source = session.source
+            }
+        case .running:
+            if highestStatus == .idle || highestStatus == .processing {
+                highestStatus = .running
+                source = session.source
+            }
+        case .processing:
+            if highestStatus == .idle {
+                highestStatus = .processing
+                source = session.source
+            }
+        case .idle:
+            break
+        }
+    }
+
+    if highestStatus == .idle, let idleSource = mostRecentIdleSource?.source {
+        source = idleSource
+    }
+
+    return SessionSummary(
+        status: highestStatus,
+        primarySource: source,
+        activeSessionCount: active,
+        totalSessionCount: sessions.count
+    )
+}
+
 // MARK: - Side Effects
 
 public enum SideEffect: Equatable {
