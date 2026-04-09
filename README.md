@@ -4,6 +4,8 @@ A Dynamic Island for your AI coding agents on macOS.
 
 Monitor Claude Code, Codex, Gemini CLI, Cursor, and more — right from your MacBook's notch.
 
+![Oh My Island](screenshot.png)
+
 ## Features
 
 - **Real-time session monitoring** — See all your AI agent sessions in one glance
