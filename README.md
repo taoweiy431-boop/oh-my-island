@@ -18,6 +18,24 @@ Monitor Claude Code, Codex, Gemini CLI, Cursor, and more — right from your Mac
 - **Environment safety check** — Detect VPN, CI/CD, SSH and other risk factors
 - **Multi-agent support** — Claude Code, Codex, Gemini CLI, Cursor, Qoder, Factory, CodeBuddy, OpenCode
 
+## Install
+
+### From DMG
+1. Download the latest DMG from [Releases](https://github.com/taoweiy431-boop/oh-my-island/releases)
+2. Open the DMG and drag "Oh My Island" to Applications
+3. First launch: **Right-click** the app → **Open** → Click **Open** in the dialog
+4. (Or run `sudo xattr -r -d com.apple.quarantine /Applications/Oh\ My\ Island.app`)
+
+> The app is not notarized (no Apple Developer certificate). Right-click → Open bypasses Gatekeeper for the first launch.
+
+### From Source
+```bash
+git clone https://github.com/taoweiy431-boop/oh-my-island.git
+cd oh-my-island
+swift build
+.build/arm64-apple-macosx/debug/OhMyIsland
+```
+
 ## Requirements
 
 - macOS 14+
