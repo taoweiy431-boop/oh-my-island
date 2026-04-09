@@ -40,7 +40,7 @@ final class AppState {
         if case .completionCard = surface { return true }
         return false
     }
-    private var modelReadAttempted: Set<String> = []
+    private var modelReadAttempted: [String: (count: Int, lastAttempt: Date)] = [:]
 
     var rotatingSessionId: String?
     var rotatingSession: SessionSnapshot? {
@@ -171,6 +171,7 @@ final class AppState {
             showNextPending()
         }
         sessions.removeValue(forKey: sessionId)
+        modelReadAttempted.removeValue(forKey: sessionId)
         stopMonitor(sessionId)
         if activeSessionId == sessionId {
             activeSessionId = mostActiveSessionId()
@@ -371,6 +372,12 @@ final class AppState {
         if primarySource != summary.primarySource { primarySource = summary.primarySource }
         if activeSessionCount != summary.activeSessionCount { activeSessionCount = summary.activeSessionCount }
         if totalSessionCount != summary.totalSessionCount { totalSessionCount = summary.totalSessionCount }
+
+        if summary.activeSessionCount > 0 {
+            MembershipTracker.shared.startTracking()
+        } else {
+            MembershipTracker.shared.stopTracking()
+        }
     }
 
     private func refreshProviderTitle(for trackedSessionId: String, providerSessionId: String? = nil) {
@@ -412,6 +419,11 @@ final class AppState {
 
         if sessions[sessionId] == nil {
             sessions[sessionId] = SessionSnapshot()
+            MembershipTracker.shared.recordSessionStart()
+        }
+
+        if EventNormalizer.normalize(event.eventName) == "UserPromptSubmit" {
+            MembershipTracker.shared.recordPrompt()
         }
 
         let wasWaiting = sessions[sessionId]?.status == .waitingApproval
@@ -419,12 +431,19 @@ final class AppState {
 
         let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: maxHistory)
 
-        // Model transcript read: done AFTER reduceEvent so extractMetadata has filled in cwd
-        if sessions[sessionId]?.model == nil && !modelReadAttempted.contains(sessionId) {
-            modelReadAttempted.insert(sessionId)
-            let cwd = sessions[sessionId]?.cwd
-            let model = Self.readModelFromTranscript(sessionId: sessionId, cwd: cwd)
-            sessions[sessionId]?.model = model
+        if sessions[sessionId]?.model == nil {
+            let attempt = modelReadAttempted[sessionId]
+            let maxRetries = 3
+            let cooldown: TimeInterval = 30
+            let shouldRetry = attempt == nil
+                || (attempt!.count < maxRetries && Date().timeIntervalSince(attempt!.lastAttempt) > cooldown)
+            if shouldRetry {
+                let count = (attempt?.count ?? 0) + 1
+                modelReadAttempted[sessionId] = (count: count, lastAttempt: Date())
+                let cwd = sessions[sessionId]?.cwd
+                let model = Self.readModelFromTranscript(sessionId: sessionId, cwd: cwd)
+                sessions[sessionId]?.model = model
+            }
         }
 
         // If session was waiting but received an activity event, the question/permission
@@ -749,14 +768,29 @@ final class AppState {
             let sid = next.event.sessionId ?? "default"
             activeSessionId = sid
             surface = .approvalCard(sessionId: sid)
+            PermissionPopupController.shared.show(
+                tool: next.event.toolName ?? "Unknown",
+                toolInput: next.event.toolInput,
+                onAllow: { [weak self] in self?.approvePermission() },
+                onDeny: { [weak self] in self?.denyPermission() }
+            )
         } else if let next = questionQueue.first {
             let sid = next.event.sessionId ?? "default"
             activeSessionId = sid
             surface = .questionCard(sessionId: sid)
+            QuestionPopupController.shared.show(
+                question: next.question.question,
+                options: next.question.options,
+                descriptions: next.question.descriptions,
+                onAnswer: { [weak self] answer in self?.answerQuestion(answer) },
+                onSkip: { [weak self] in self?.skipQuestion() }
+            )
         } else if case .approvalCard = surface {
             surface = .collapsed
+            PermissionPopupController.shared.dismiss()
         } else if case .questionCard = surface {
             surface = .collapsed
+            QuestionPopupController.shared.dismiss()
         }
     }
 

@@ -1,6 +1,10 @@
-.build/
-.superpowers/
-HANDOFF.md
-docs/superpowers/
-dev.sh
 .DS_Store
+.build/
+.swiftpm/
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+*.dSYM
+*.resolved
+.vscode/
+*.dmg

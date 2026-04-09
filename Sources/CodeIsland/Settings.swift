@@ -35,6 +35,7 @@ enum SettingsKey {
 
     // Advanced
     static let maxToolHistory = "maxToolHistory"
+    static let rotationInterval = "rotationInterval"
 
     // Mascot
     static let mascotSpeed = "mascotSpeed"
@@ -42,6 +43,13 @@ enum SettingsKey {
     // Session grouping
     static let sessionGroupingMode = "sessionGroupingMode"
 
+    // Usage monitoring
+    static let usageWarningThreshold = "usageWarningThreshold"
+    static let claudeApiKeyFiveHourLimit = "claudeApiKeyFiveHourLimit"
+    static let claudeApiKeyWeeklyLimit = "claudeApiKeyWeeklyLimit"
+
+    // Onboarding
+    static let onboardingCompleted = "onboardingCompleted"
 }
 
 struct SettingsDefaults {
@@ -68,10 +76,15 @@ struct SettingsDefaults {
     static let soundBoot = true
 
     static let maxToolHistory = 20
+    static let rotationInterval = 5
 
     static let mascotSpeed = 100  // percentage: 0–300, 0 = silent
 
     static let sessionGroupingMode = "all"
+
+    static let usageWarningThreshold = 80
+    static let claudeApiKeyFiveHourLimit = 5_000_000
+    static let claudeApiKeyWeeklyLimit = 50_000_000
 }
 
 @MainActor
@@ -102,8 +115,12 @@ class SettingsManager {
             SettingsKey.soundPromptSubmit: SettingsDefaults.soundPromptSubmit,
             SettingsKey.soundBoot: SettingsDefaults.soundBoot,
             SettingsKey.maxToolHistory: SettingsDefaults.maxToolHistory,
+            SettingsKey.rotationInterval: SettingsDefaults.rotationInterval,
             SettingsKey.mascotSpeed: SettingsDefaults.mascotSpeed,
             SettingsKey.sessionGroupingMode: SettingsDefaults.sessionGroupingMode,
+            SettingsKey.usageWarningThreshold: SettingsDefaults.usageWarningThreshold,
+            SettingsKey.claudeApiKeyFiveHourLimit: SettingsDefaults.claudeApiKeyFiveHourLimit,
+            SettingsKey.claudeApiKeyWeeklyLimit: SettingsDefaults.claudeApiKeyWeeklyLimit,
         ])
     }
 

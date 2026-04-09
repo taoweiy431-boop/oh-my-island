@@ -52,11 +52,18 @@ enum SessionPersistence {
             )
         }
         do {
-            try FileManager.default.createDirectory(atPath: dirPath, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                atPath: dirPath, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(persisted)
             try data.write(to: URL(fileURLWithPath: filePath), options: .atomic)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: filePath
+            )
         } catch {}
     }
 

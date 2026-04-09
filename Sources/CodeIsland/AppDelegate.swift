@@ -8,8 +8,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     var panelController: PanelWindowController?
     private var hookServer: HookServer?
+    private var codexSessionWatcher: CodexSessionWatcher?
     private var hookRecoveryTimer: Timer?
     private var lastHookCheck: Date = .distantPast
+    
 
     let appState = AppState()
 
@@ -27,10 +29,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hookServer = HookServer(appState: appState)
         hookServer?.start()
 
+        // Codex integration via FSEvents on ~/.codex/sessions/, avoiding the
+        // "Running hook" TUI noise caused by registering Codex hooks.
+        codexSessionWatcher = CodexSessionWatcher(appState: appState)
+        codexSessionWatcher?.start()
+
         panelController = PanelWindowController(appState: appState)
         panelController?.showPanel()
 
         appState.startSessionDiscovery()
+        BuddyService.shared.load()
+        UsageTracker.shared.start()
 
         // Hooks auto-recovery: periodic + app activation trigger
         hookRecoveryTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
@@ -66,9 +75,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             UpdateChecker.shared.checkForUpdates(silent: true)
         }
 
+        playBootAnimation()
+    }
+
+    private func playBootAnimation() {
         SoundManager.shared.playBoot()
 
-        // Boot animation: brief expand to confirm app is running
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard appState.surface == .collapsed else { return }
@@ -88,7 +100,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hookRecoveryTimer?.invalidate()
         appState.saveSessions()
         hookServer?.stop()
+        codexSessionWatcher?.stop()
         appState.stopSessionDiscovery()
+        UsageTracker.shared.stop()
     }
 
     private func checkAndRepairHooks() {

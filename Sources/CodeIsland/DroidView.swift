@@ -18,6 +18,7 @@ struct DroidView: View {
     private static let kbBase  = Color(red: 0.15, green: 0.13, blue: 0.12)
     private static let kbKey   = Color(red: 0.32, green: 0.28, blue: 0.25)
     private static let kbHi    = Color(red: 0.835, green: 0.416, blue: 0.149)
+    private static let tieC = Color(red: 0.20, green: 0.18, blue: 0.15)  // dark industrial tie
 
     var body: some View {
         ZStack {
@@ -121,6 +122,16 @@ struct DroidView: View {
         c.fill(Path(v.r(8.5, 14.5, 2, 1.5)), with: .color(Self.metalC))
     }
 
+    private func drawTie(_ c: GraphicsContext, v: V, dy: CGFloat) {
+        // Knot
+        c.fill(Path(v.r(7, 14.5, 1, 0.7, dy: dy)), with: .color(Self.tieC))
+        // Tie body
+        c.fill(Path(v.r(6.5, 15, 2, 1.2, dy: dy)), with: .color(Self.tieC))
+        c.fill(Path(v.r(6.8, 16, 1.4, 0.8, dy: dy)), with: .color(Self.tieC))
+        // Gold stripe
+        c.fill(Path(v.r(7.2, 15, 0.5, 1.5, dy: dy)), with: .color(Self.eyeC.opacity(0.4)))
+    }
+
     // ━━━━━━ SLEEP ━━━━━━
     private var sleepScene: some View {
         ZStack {
@@ -165,6 +176,7 @@ struct DroidView: View {
             drawShadow(c, v: v, width: 8, opacity: 0.2)
             drawLegs(c, v: v)
             drawRobot(c, v: v, dy: breathe)
+            drawTie(c, v: v, dy: breathe)
             if eyeOn {
                 drawEyes(c, v: v, dy: breathe, color: Self.eyeC.opacity(0.3), scale: 0.4)
             }
@@ -208,6 +220,7 @@ struct DroidView: View {
                    with: .color(Self.kbHi.opacity(0.9)))
 
             drawRobot(c, v: v, dy: bounce)
+            drawTie(c, v: v, dy: bounce)
             drawEyes(c, v: v, dy: bounce, scale: blink)
         }
     }
@@ -266,6 +279,7 @@ struct DroidView: View {
 
             c.translateBy(x: shakeX * v.s, y: 0)
             drawRobot(c, v: v, dy: jumpY, squashX: squashX, squashY: squashY)
+            drawTie(c, v: v, dy: jumpY)
             drawEyes(c, v: v, dy: jumpY, color: eyeColor,
                      scale: pct > 0.03 && pct < 0.15 ? 1.3 : 1.0)
             c.translateBy(x: -shakeX * v.s, y: 0)

@@ -211,6 +211,26 @@ let isBlocking = isPermission || isQuestion
 
 debugLog("event=\(eventName) session=\(sessionId) permission=\(isPermission) question=\(isQuestion)")
 
+// For non-blocking events, fork and let the parent exit immediately.
+// This makes Codex (and other CLIs) see the hook as "completed" in <1ms,
+// eliminating the "Running hook" noise from their TUI.
+// The child process handles env enrichment + socket communication in the background.
+// Note: Swift marks fork() unavailable, so we call the C symbol directly.
+if !isBlocking {
+    typealias ForkFn = @convention(c) () -> Int32
+    let forkPtr = dlsym(dlopen(nil, RTLD_LAZY), "fork")!
+    let cFork = unsafeBitCast(forkPtr, to: ForkFn.self)
+    let pid = cFork()
+    if pid < 0 {
+        // fork failed — fall through and run in foreground
+    } else if pid > 0 {
+        // Parent: exit immediately so the calling CLI sees instant completion
+        _exit(0)
+    }
+    // Child: detach from parent session and continue with the real work
+    setsid()
+}
+
 // Arm deadline for env collection + connect + send (protects all events).
 // For blocking events, this is disarmed right before the long recvAll wait.
 alarm(8)

@@ -56,19 +56,10 @@ struct ConfigInstaller {
                 ("PreCompact", 5, true),
             ]
         ),
-        // Codex
-        CLIConfig(
-            name: "Codex", source: "codex",
-            configPath: ".codex/hooks.json", configKey: "hooks",
-            format: .nested,
-            events: [
-                ("SessionStart", 5, false),
-                ("UserPromptSubmit", 5, false),
-                ("PreToolUse", 5, false),
-                ("PostToolUse", 5, false),
-                ("Stop", 5, false),
-            ]
-        ),
+        // Codex — intentionally NOT registered as hooks.
+        // We use CodexSessionWatcher (FSEvents on ~/.codex/sessions/) instead,
+        // which avoids the "Running hook" TUI noise that Codex shows for
+        // every registered hook. See CodexSessionWatcher.swift.
         // Gemini CLI — timeout in milliseconds
         CLIConfig(
             name: "Gemini", source: "gemini",
@@ -218,11 +209,10 @@ struct ConfigInstaller {
             }
         }
 
-        // Codex requires codex_hooks = true in config.toml
-        if isEnabled(source: "codex"),
-           fm.fileExists(atPath: NSHomeDirectory() + "/.codex") {
-            enableCodexHooksConfig(fm: fm)
-        }
+        // Codex integration uses CodexSessionWatcher (FSEvents) instead of hooks.
+        // Purge any pre-existing CodeIsland/OpenIsland/VibeIsland hook entries
+        // from ~/.codex/hooks.json so Codex TUI stops showing "Running hook".
+        purgeCodexHooksFile(fm: fm)
 
         // Install OpenCode plugin
         if isEnabled(source: "opencode") {
@@ -311,6 +301,9 @@ struct ConfigInstaller {
         installBridgeBinary(fm: fm)
         installHookScript(fm: fm)
 
+        // Keep Codex hooks.json clean on every repair pass (non-hook integration).
+        purgeCodexHooksFile(fm: fm)
+
         var repaired: [String] = []
         for cli in allCLIs {
             guard isEnabled(source: cli.source) else { continue }
@@ -322,7 +315,6 @@ struct ConfigInstaller {
                 }
             } else {
                 installExternalHooks(cli: cli, fm: fm)
-                if cli.source == "codex" { enableCodexHooksConfig(fm: fm) }
                 if isHooksInstalled(for: cli, fm: fm) {
                     repaired.append(cli.name)
                 }
@@ -465,6 +457,20 @@ struct ConfigInstaller {
         let quotedBridge = bridgeCommand.contains(" ") ? "\"\(bridgeCommand)\"" : bridgeCommand
         let command = "\(quotedBridge) --source \(cli.source)"
 
+        let activeEventNames = Set(cli.events.map { $0.0 })
+
+        // Clean up our hooks from events no longer in the active list
+        for (event, entries) in hooks {
+            guard !activeEventNames.contains(event),
+                  var eventEntries = entries as? [[String: Any]] else { continue }
+            eventEntries.removeAll { containsOurHook($0) }
+            if eventEntries.isEmpty {
+                hooks.removeValue(forKey: event)
+            } else {
+                hooks[event] = eventEntries
+            }
+        }
+
         for (event, timeout, _) in cli.events {
             var eventEntries = hooks[event] as? [[String: Any]] ?? []
             // Remove old hooks before adding fresh ones (ensures reinstall works)
@@ -488,6 +494,54 @@ struct ConfigInstaller {
             return false
         }
         return fm.createFile(atPath: cli.fullPath, contents: data)
+    }
+
+    // MARK: - Codex cleanup (non-hook integration)
+
+    /// Remove any CodeIsland / OpenIsland / VibeIsland hook entries from
+    /// `~/.codex/hooks.json`. Codex integration now goes through
+    /// `CodexSessionWatcher` (FSEvents on `~/.codex/sessions/`), so keeping any
+    /// hook registered would cause Codex TUI to display "Running hook"
+    /// messages for every event. If the file ends up empty after pruning it
+    /// is removed entirely.
+    @discardableResult
+    private static func purgeCodexHooksFile(fm: FileManager) -> Bool {
+        let path = NSHomeDirectory() + "/.codex/hooks.json"
+        guard fm.fileExists(atPath: path) else { return true }
+        guard var root = parseJSONFile(at: path, fm: fm) else { return false }
+
+        var hooks = root["hooks"] as? [String: Any] ?? [:]
+        var mutated = false
+
+        for (event, value) in hooks {
+            guard var entries = value as? [[String: Any]] else { continue }
+            let before = entries.count
+            entries.removeAll { containsOurHook($0) }
+            if entries.count != before { mutated = true }
+
+            if entries.isEmpty {
+                hooks.removeValue(forKey: event)
+            } else {
+                hooks[event] = entries
+            }
+        }
+
+        guard mutated else { return true }
+
+        if hooks.isEmpty {
+            // Drop the whole file so Codex falls back to its default behaviour.
+            try? fm.removeItem(atPath: path)
+            return true
+        }
+
+        root["hooks"] = hooks
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: root,
+            options: [.prettyPrinted, .sortedKeys]
+        ) else {
+            return false
+        }
+        return fm.createFile(atPath: path, contents: data)
     }
 
     // MARK: - Codex config.toml
@@ -559,14 +613,17 @@ struct ConfigInstaller {
     private static func isHooksInstalled(for cli: CLIConfig, fm: FileManager) -> Bool {
         guard let root = parseJSONFile(at: cli.fullPath, fm: fm),
               let hooks = root[cli.configKey] as? [String: Any] else { return false }
-        // Check that ALL required events have our hook installed, not just any one
+        // Check that ALL required events have our own hook installed (strict match).
+        // Sibling-project hooks (OpenIsland, VibeIsland) do not count as "installed".
         let allPresent = cli.events.allSatisfy { (event, _, _) in
             guard let entries = hooks[event] as? [[String: Any]] else { return false }
-            return entries.contains { containsOurHook($0) }
+            return entries.contains { containsCodeIslandHook($0) }
         }
         guard allPresent else { return false }
         // Also check for stale "async" keys that need cleanup
         if hasStaleAsyncKey(hooks) { return false }
+        // Also trigger reinstall if sibling-project hooks are present, so we can dedupe them.
+        if hasSiblingHooks(hooks, cli: cli) { return false }
         return true
     }
 
@@ -583,19 +640,56 @@ struct ConfigInstaller {
         return false
     }
 
-    /// Check if a hook entry contains our hook command
+    /// Detect sibling-project hooks (OpenIsland/VibeIsland) that should be deduped.
+    private static func hasSiblingHooks(_ hooks: [String: Any], cli: CLIConfig) -> Bool {
+        for (_, value) in hooks {
+            guard let entries = value as? [[String: Any]] else { continue }
+            for entry in entries {
+                if containsSiblingHook(entry) { return true }
+            }
+        }
+        return false
+    }
+
+    /// Check if a hook entry contains our hook command, or a sibling project's hook.
+    /// Used during install cleanup to dedupe CodeIsland and OpenIsland/VibeIsland.
     private static func containsOurHook(_ entry: [String: Any]) -> Bool {
-        // Claude/nested format: entry.hooks[].command
+        containsCodeIslandHook(entry) || containsSiblingHook(entry)
+    }
+
+    /// Strict check: only matches CodeIsland's own hook command.
+    private static func containsCodeIslandHook(_ entry: [String: Any]) -> Bool {
         if let hookList = entry["hooks"] as? [[String: Any]] {
             return hookList.contains {
                 let cmd = $0["command"] as? String ?? ""
-                return cmd.contains("codeisland") || cmd.contains("vibenotch")
+                return isCodeIslandHookCommand(cmd)
             }
         }
-        // Flat format: entry.command
-        if let cmd = entry["command"] as? String,
-           (cmd.contains("codeisland") || cmd.contains("vibenotch")) { return true }
+        if let cmd = entry["command"] as? String, isCodeIslandHookCommand(cmd) { return true }
         return false
+    }
+
+    /// Loose check: matches sibling-project hooks (OpenIsland, VibeIsland).
+    private static func containsSiblingHook(_ entry: [String: Any]) -> Bool {
+        if let hookList = entry["hooks"] as? [[String: Any]] {
+            return hookList.contains {
+                let cmd = $0["command"] as? String ?? ""
+                return isSiblingHookCommand(cmd)
+            }
+        }
+        if let cmd = entry["command"] as? String, isSiblingHookCommand(cmd) { return true }
+        return false
+    }
+
+    private static func isCodeIslandHookCommand(_ cmd: String) -> Bool {
+        let lower = cmd.lowercased()
+        return lower.contains("codeisland") || lower.contains("vibenotch")
+    }
+
+    private static func isSiblingHookCommand(_ cmd: String) -> Bool {
+        let lower = cmd.lowercased()
+        return lower.contains("openislandhooks") || lower.contains("vibeislandhooks")
+            || lower.contains("open-island-bridge") || lower.contains("vibe-island-bridge")
     }
 
     // MARK: - Bridge & Hook Script

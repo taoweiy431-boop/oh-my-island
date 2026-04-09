@@ -17,6 +17,7 @@ struct DexView: View {
     private static let kbBase    = Color(red: 0.18, green: 0.18, blue: 0.20)
     private static let kbKey     = Color(red: 0.40, green: 0.40, blue: 0.42)
     private static let kbHi      = Color.white
+    private static let tieC = Color(red: 0.25, green: 0.25, blue: 0.28) // dark gray tie
 
     var body: some View {
         ZStack {
@@ -130,6 +131,16 @@ struct DexView: View {
         c.fill(Path(v.r(9, 14.5, 1, 1.5)), with: .color(Self.cloudDark))
     }
 
+    private func drawTie(_ c: GraphicsContext, v: V, dy: CGFloat) {
+        // Knot at bottom of cloud
+        c.fill(Path(v.r(7, 14, 1, 0.7, dy: dy)), with: .color(Self.tieC))
+        // Tie body
+        c.fill(Path(v.r(6.5, 14.5, 2, 1, dy: dy)), with: .color(Self.tieC))
+        c.fill(Path(v.r(6.8, 15.3, 1.4, 0.7, dy: dy)), with: .color(Self.tieC))
+        // White stripe
+        c.fill(Path(v.r(7.2, 14.3, 0.5, 1.5, dy: dy)), with: .color(Self.cloudC.opacity(0.25)))
+    }
+
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // SLEEP — floating gently, cursor blinking slow
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -178,6 +189,7 @@ struct DexView: View {
             drawShadow(c, v: v, width: 7 + abs(float) * 0.3, opacity: 0.2)
             drawLegs(c, v: v)
             drawCloud(c, v: v, dy: float)
+            drawTie(c, v: v, dy: float)
             // Sleep: only show dim cursor (no `>` chevron = mouth closed)
             if cursorOn {
                 c.fill(Path(v.r(6, 12, 3, 1, dy: float)),
@@ -234,6 +246,7 @@ struct DexView: View {
             c.fill(Path(v.r(fkx, fky, 1.8, 0.7)), with: .color(Self.kbHi.opacity(0.9)))
 
             drawCloud(c, v: v, dy: dy)
+            drawTie(c, v: v, dy: dy)
             drawPrompt(c, v: v, dy: dy, cursorOn: cursorOn)
         }
     }
@@ -301,6 +314,7 @@ struct DexView: View {
             // Since drawCloud doesn't take shakeX, we apply transform
             c.translateBy(x: shakeX * v.s, y: 0)
             drawCloud(c, v: v, dy: jumpY, squashX: squashX, squashY: squashY)
+            drawTie(c, v: v, dy: jumpY)
             drawPrompt(c, v: v, dy: jumpY, color: promptColor, cursorOn: true)
             c.translateBy(x: -shakeX * v.s, y: 0)
 

@@ -17,6 +17,7 @@ struct QoderView: View {
     private static let kbBase  = Color(red: 0.10, green: 0.18, blue: 0.12)
     private static let kbKey   = Color(red: 0.20, green: 0.38, blue: 0.24)
     private static let kbHi    = Color(red: 0.165, green: 0.859, blue: 0.361)
+    private static let bowC = Color(red: 0.08, green: 0.50, blue: 0.20)  // dark green bow
 
     var body: some View {
         ZStack {
@@ -122,6 +123,18 @@ struct QoderView: View {
         c.fill(Path(v.r(9, 14.5, 1, 1.5)), with: .color(Self.bodyDk))
     }
 
+    private func drawBowTie(_ c: GraphicsContext, v: V, dy: CGFloat) {
+        let cx: CGFloat = 7.5
+        // Left wing
+        c.fill(Path(v.r(cx - 2.5, 14, 2, 0.5, dy: dy)), with: .color(Self.bowC))
+        c.fill(Path(v.r(cx - 2, 13.7, 1.5, 1.2, dy: dy)), with: .color(Self.bowC))
+        // Right wing
+        c.fill(Path(v.r(cx + 0.5, 14, 2, 0.5, dy: dy)), with: .color(Self.bowC))
+        c.fill(Path(v.r(cx + 0.5, 13.7, 1.5, 1.2, dy: dy)), with: .color(Self.bowC))
+        // Center knot
+        c.fill(Path(v.r(cx - 0.5, 13.8, 1, 0.9, dy: dy)), with: .color(Self.faceC.opacity(0.5)))
+    }
+
     // ━━━━━━ SLEEP ━━━━━━
     private var sleepScene: some View {
         ZStack {
@@ -162,6 +175,7 @@ struct QoderView: View {
             drawShadow(c, v: v, width: 7 + abs(float) * 0.3, opacity: 0.2)
             drawLegs(c, v: v)
             drawBubble(c, v: v, dy: float)
+            drawBowTie(c, v: v, dy: float)
             // Sleepy eyes (half shut, no smile)
             drawQFace(c, v: v, dy: float, color: Self.faceC.opacity(0.5), eyeScale: 0.3, showSmile: false)
         }
@@ -204,6 +218,7 @@ struct QoderView: View {
                    with: .color(Self.kbHi.opacity(0.9)))
 
             drawBubble(c, v: v, dy: bounce)
+            drawBowTie(c, v: v, dy: bounce)
             drawQFace(c, v: v, dy: bounce, eyeScale: blink)
         }
     }
@@ -258,6 +273,7 @@ struct QoderView: View {
 
             c.translateBy(x: shakeX * v.s, y: 0)
             drawBubble(c, v: v, dy: jumpY, squashX: squashX, squashY: squashY)
+            drawBowTie(c, v: v, dy: jumpY)
             drawQFace(c, v: v, dy: jumpY, eyeScale: pct > 0.03 && pct < 0.15 ? 1.3 : 1.0)
             c.translateBy(x: -shakeX * v.s, y: 0)
 

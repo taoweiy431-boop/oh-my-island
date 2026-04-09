@@ -18,6 +18,7 @@ struct GeminiView: View {
     private static let kbBase = Color(red: 0.22, green: 0.25, blue: 0.38)
     private static let kbKey  = Color(red: 0.40, green: 0.44, blue: 0.58)
     private static let kbHi   = Color.white
+    private static let bowC = Color(red: 0.518, green: 0.478, blue: 0.808) // #847ACE purple bow
 
     var body: some View {
         ZStack {
@@ -111,6 +112,18 @@ struct GeminiView: View {
         c.fill(Path(v.r(8.5, 14, 1, 2, dy: legDy)), with: .color(Self.purpC.opacity(0.7)))
     }
 
+    private func drawBowTie(_ c: GraphicsContext, v: V, dy: CGFloat) {
+        let cx: CGFloat = 7.5
+        // Left wing
+        c.fill(Path(v.r(cx - 2.5, 13.5, 2, 0.5, dy: dy)), with: .color(Self.bowC))
+        c.fill(Path(v.r(cx - 2, 13.2, 1.5, 1.2, dy: dy)), with: .color(Self.bowC))
+        // Right wing
+        c.fill(Path(v.r(cx + 0.5, 13.5, 2, 0.5, dy: dy)), with: .color(Self.bowC))
+        c.fill(Path(v.r(cx + 0.5, 13.2, 1.5, 1.2, dy: dy)), with: .color(Self.bowC))
+        // Center knot
+        c.fill(Path(v.r(cx - 0.5, 13.3, 1, 1, dy: dy)), with: .color(Self.roseC))
+    }
+
     // ━━━━━━ SLEEP ━━━━━━
     private var sleepScene: some View {
         ZStack {
@@ -155,6 +168,7 @@ struct GeminiView: View {
             drawShadow(c, v: v, width: 6 + abs(float) * 0.3, opacity: 0.2)
             drawLegs(c, v: v, dy: float)
             drawStar(c, v: v, dy: float, scale: 0.9, rotate: slowSpin)
+            drawBowTie(c, v: v, dy: float)
             drawFace(c, v: v, dy: float, blinkPhase: blink)
         }
     }
@@ -199,6 +213,7 @@ struct GeminiView: View {
                    with: .color(Self.kbHi.opacity(0.9)))
 
             drawStar(c, v: v, dy: dy, scale: 1.0, rotate: spin)
+            drawBowTie(c, v: v, dy: dy)
             drawFace(c, v: v, dy: dy, blinkPhase: blink)
         }
     }
@@ -254,6 +269,7 @@ struct GeminiView: View {
 
             c.translateBy(x: shakeX * v.s, y: 0)
             drawStar(c, v: v, dy: jumpY, scale: pulseScale, rotate: 0)
+            drawBowTie(c, v: v, dy: jumpY)
             drawFace(c, v: v, dy: jumpY, eyeScale: pct > 0.03 && pct < 0.15 ? 1.3 : 1.0)
             c.translateBy(x: -shakeX * v.s, y: 0)
 

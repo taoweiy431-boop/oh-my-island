@@ -1,3 +1,4 @@
+import Lottie
 import SwiftUI
 import CodeIslandCore
 
@@ -33,6 +34,15 @@ struct NotchPanelView: View {
 
     /// Mascot size — fits within the menu bar height
     private var mascotSize: CGFloat { min(27, notchHeight - 6) }
+
+    private var tierBorderColor: Color {
+        let hex = MembershipTracker.shared.currentTier.colorHex
+        return Color(
+            red: Double((hex >> 16) & 0xFF) / 255.0,
+            green: Double((hex >> 8) & 0xFF) / 255.0,
+            blue: Double(hex & 0xFF) / 255.0
+        )
+    }
 
     /// Minimum wing width needed to display compact bar content
     private var compactWingWidth: CGFloat { mascotSize + 14 }
@@ -124,12 +134,62 @@ struct NotchPanelView: View {
                             )
                             .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
                         }
+                    case .chat(let sid):
+                        if let session = appState.sessions[sid] {
+                            ChatView(
+                                session: session,
+                                sessionId: sid,
+                                appState: appState
+                            )
+                            .transition(.opacity.combined(with: .move(edge: .trailing)))
+                        }
                     case .completionCard:
                         SessionListView(appState: appState, onlySessionId: appState.justCompletedSessionId)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     case .sessionList:
                         SessionListView(appState: appState, onlySessionId: nil)
                             .transition(.opacity.combined(with: .move(edge: .top)))
+                    case .buddyCard:
+                        if let buddy = BuddyService.shared.buddy {
+                            BuddyCardView(buddy: buddy)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                        }
+                    case .usagePanel:
+                        if let usageInfo = UsageTracker.shared.info {
+                            UsagePanelView(info: usageInfo)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                        } else {
+                            VStack(spacing: 8) {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                Text("正在加载用量数据…")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.white.opacity(0.5))
+                            }
+                            .padding(.vertical, 16)
+                            .task {
+                                await UsageTracker.shared.refresh()
+                            }
+                        }
+                    case .settingsPanel:
+                        NotchSettingsView(appState: appState)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                    case .environmentCheck:
+                        EnvironmentCheckView()
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                    case .membershipCard:
+                        MembershipCardView()
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
                     case .collapsed:
                         EmptyView()
                     }
@@ -145,6 +205,19 @@ struct NotchPanelView: View {
                 )
                 .fill(.black)
             )
+            .overlay(
+                isActive ? NotchPanelShape(
+                    topExtension: shouldShowExpanded ? 14 : 3,
+                    bottomRadius: shouldShowExpanded ? 24 : 12,
+                    minHeight: notchHeight
+                )
+                .stroke(
+                    MembershipTracker.shared.currentTier.level > 1
+                        ? tierBorderColor.opacity(0.15)
+                        : .clear,
+                    lineWidth: 1
+                ) : nil
+            )
             .contentShape(Rectangle())
             .onHover { hovering in
                 // Idle indicator hover
@@ -153,7 +226,7 @@ struct NotchPanelView: View {
                     return
                 }
                 switch appState.surface {
-                case .approvalCard, .questionCard: return
+                case .approvalCard, .questionCard, .chat, .buddyCard, .usagePanel, .settingsPanel, .environmentCheck: return
                 case .completionCard:
                     // Completion card: mark entered on hover-in, block collapse until entered
                     if hovering {
@@ -182,10 +255,10 @@ struct NotchPanelView: View {
                 }
 
                 if hovering {
-                    // Delay expansion to avoid accidental triggers
                     hoverTimer?.invalidate()
                     hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
                         Task { @MainActor in
+                            guard appState.surface == .collapsed else { return }
                             withAnimation(NotchAnimation.open) {
                                 appState.surface = .sessionList
                                 appState.cancelCompletionQueue()
@@ -196,10 +269,10 @@ struct NotchPanelView: View {
                         }
                     }
                 } else {
-                    // Collapse with brief delay to prevent flicker on accidental mouse-out
                     hoverTimer?.invalidate()
                     hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { _ in
                         Task { @MainActor in
+                            guard appState.surface == .sessionList else { return }
                             withAnimation(NotchAnimation.close) {
                                 appState.surface = .collapsed
                             }
@@ -229,39 +302,49 @@ private struct CompactLeftWing: View {
     private var displaySource: String { appState.rotatingSession?.source ?? appState.primarySource }
     private var displayStatus: AgentStatus { appState.rotatingSession?.status ?? appState.status }
 
+    private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
+
     var body: some View {
         HStack(spacing: 6) {
             if expanded {
-                AppLogoView(size: 36, showBackground: false)
+                ClaudeLogoCompact(size: 22)
+                    .padding(.leading, 4)
+                    .onTapGesture {
+                        MembershipCardPopupController.shared.toggle()
+                    }
                 if appState.sessions.count > 1 {
-                    HStack(spacing: 1) {
-                        ForEach([("all", "ALL"), ("status", "STA"), ("cli", "CLI")], id: \.0) { tag, label in
+                    HStack(spacing: 2) {
+                        ForEach([("all", "All"), ("status", "Status"), ("cli", "CLI")], id: \.0) { tag, label in
                             let selected = groupingMode == tag
                             Button {
                                 withAnimation(.easeInOut(duration: 0.15)) { groupingMode = tag }
                             } label: {
-                                PixelText(
-                                    text: label,
-                                    color: selected ? Color(red: 0.3, green: 0.85, blue: 0.4) : .white.opacity(0.3),
-                                    pixelSize: 1.3
-                                )
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 4)
-                                .background(
-                                    Rectangle().fill(selected ? .white.opacity(0.1) : .clear)
-                                )
+                                Text(label)
+                                    .font(.system(size: 10, weight: selected ? .semibold : .regular, design: .serif))
+                                    .foregroundStyle(selected ? claudeOrange : .white.opacity(0.4))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(selected ? claudeOrange.opacity(0.12) : .clear)
+                                    )
                             }
                             .buttonStyle(.plain)
                         }
                     }
-                    .background(Rectangle().fill(.white.opacity(0.05)))
-                    .overlay(Rectangle().stroke(.white.opacity(0.1), lineWidth: 1))
                 }
             } else {
                 MascotView(source: displaySource, status: displayStatus, size: mascotSize)
                     .id(displaySource)
                     .transition(.opacity)
                     .animation(.easeInOut(duration: 0.3), value: displaySource)
+                    .onTapGesture {
+                        if BuddyService.shared.isLoaded {
+                            withAnimation(NotchAnimation.open) {
+                                appState.surface = appState.surface == .buddyCard ? .collapsed : .buddyCard
+                            }
+                        }
+                    }
             }
         }
         .padding(.leading, 6)
@@ -276,25 +359,90 @@ private struct CompactRightWing: View {
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.soundEnabled) private var soundEnabled = SettingsDefaults.soundEnabled
 
+    private var activeProjectName: String? {
+        guard let id = appState.activeSessionId,
+              let session = appState.sessions[id],
+              let cwd = session.cwd else { return nil }
+        return (cwd as NSString).lastPathComponent
+    }
+
+    private var environmentCheckColor: Color {
+        guard let report = EnvironmentChecker.shared.report else {
+            return Color(red: 0.85, green: 0.47, blue: 0.34)
+        }
+        switch report.overallRisk {
+        case .safe, .info: return .green
+        case .low: return .gray
+        case .medium: return .yellow
+        case .high: return .orange
+        case .critical: return .red
+        }
+    }
+
     var body: some View {
         HStack(spacing: 6) {
             if expanded {
-                NotchIconButton(icon: soundEnabled ? "speaker.wave.2" : "speaker.slash", tooltip: soundEnabled ? l10n["mute"] : l10n["enable_sound_tooltip"]) {
+                let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
+                NotchIconButton(icon: soundEnabled ? "speaker.wave.2" : "speaker.slash", tint: claudeOrange, tooltip: soundEnabled ? l10n["mute"] : l10n["enable_sound_tooltip"]) {
                     soundEnabled.toggle()
                 }
-                NotchIconButton(icon: "gearshape", tooltip: l10n["settings"]) {
-                    SettingsWindowController.shared.show()
+                NotchIconButton(
+                    icon: "shield.checkered",
+                    tint: environmentCheckColor,
+                    tooltip: "环境安全检测"
+                ) {
+                    withAnimation(NotchAnimation.open) {
+                        appState.surface = appState.surface == .environmentCheck ? .sessionList : .environmentCheck
+                    }
                 }
-                NotchIconButton(icon: "power", tint: Color(red: 1.0, green: 0.4, blue: 0.4), tooltip: l10n["quit"]) {
+                NotchIconButton(
+                    icon: "person.crop.rectangle.stack",
+                    tint: claudeOrange,
+                    tooltip: "会员等级"
+                ) {
+                    withAnimation(NotchAnimation.open) {
+                        appState.surface = appState.surface == .membershipCard ? .sessionList : .membershipCard
+                    }
+                }
+                NotchIconButton(
+                    icon: "chart.bar.fill",
+                    tint: UsageTracker.shared.info?.color ?? claudeOrange,
+                    tooltip: UsageTracker.shared.info?.tooltip ?? "用量"
+                ) {
+                    withAnimation(NotchAnimation.open) {
+                        appState.surface = appState.surface == .usagePanel ? .sessionList : .usagePanel
+                    }
+                }
+                NotchIconButton(icon: "line.3.horizontal", tint: claudeOrange, tooltip: l10n["settings"]) {
+                    withAnimation(NotchAnimation.open) {
+                        appState.surface = appState.surface == .settingsPanel ? .sessionList : .settingsPanel
+                    }
+                }
+                NotchIconButton(icon: "power", tint: Color(red: 1.0, green: 0.45, blue: 0.35), tooltip: l10n["quit"]) {
                     NSApplication.shared.terminate(nil)
                 }
             } else {
-                // Pending approval/question badge
+                if appState.status != .idle, let projectName = activeProjectName {
+                    Text(projectName)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
+                        .lineLimit(1)
+                }
+
                 if appState.status == .waitingApproval || appState.status == .waitingQuestion {
-                    Image(systemName: "bell.fill")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
-                        .symbolEffect(.pulse, options: .repeating)
+                    LottieTypingIndicator(size: 18)
+                } else if appState.status == .processing || appState.status == .running {
+                    LottieLoadingSpinner(size: 14)
+                }
+
+                if let usageInfo = UsageTracker.shared.info, let pct = usageInfo.fiveHourPercent {
+                    UsageMiniBar(percent: pct, color: usageInfo.color)
+                        .help(usageInfo.tooltip)
+                        .onTapGesture {
+                            withAnimation(NotchAnimation.open) {
+                                appState.surface = appState.surface == .usagePanel ? .collapsed : .usagePanel
+                            }
+                        }
                 }
 
                 HStack(spacing: 1) {
@@ -302,7 +450,7 @@ private struct CompactRightWing: View {
                     let total = appState.totalSessionCount
                     if active > 0 {
                         Text("\(active)")
-                            .foregroundStyle(Color(red: 0.4, green: 1.0, blue: 0.5))
+                            .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
                         Text("/")
                             .foregroundStyle(.white.opacity(0.4))
                     }
@@ -376,9 +524,6 @@ private struct IdleIndicatorBar: View {
                         NotchIconButton(icon: soundEnabled ? "speaker.wave.2" : "speaker.slash", tooltip: soundEnabled ? l10n["mute"] : l10n["enable_sound_tooltip"]) {
                             soundEnabled.toggle()
                         }
-                        NotchIconButton(icon: "gearshape", tooltip: l10n["settings"]) {
-                            SettingsWindowController.shared.show()
-                        }
                         NotchIconButton(icon: "power", tint: Color(red: 1.0, green: 0.4, blue: 0.4), tooltip: l10n["quit"]) {
                             NSApplication.shared.terminate(nil)
                         }
@@ -423,10 +568,10 @@ private struct ApprovalBar: View {
             HStack(spacing: 6) {
                 Text("!")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
+                    .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
                 Text(tool)
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
+                    .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
                 if let server = serverName {
                     Text("(\(server))")
                         .font(.system(size: 9, design: .monospaced))
@@ -490,37 +635,29 @@ private struct ApprovalBar: View {
             }
 
         case "Edit":
-            // Show diff style: - old / + new
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 0) {
                 if let fp = filePath {
                     Text(fp)
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.35))
                         .lineLimit(1)
                         .truncationMode(.head)
+                        .padding(.bottom, 6)
                 }
-                if let old = toolInput?["old_string"] as? String {
-                    HStack(alignment: .top, spacing: 4) {
-                        Text("−")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color(red: 1.0, green: 0.4, blue: 0.4))
-                        Text(old.prefix(120))
-                            .font(.system(size: 9.5, design: .monospaced))
-                            .foregroundStyle(Color(red: 1.0, green: 0.4, blue: 0.4).opacity(0.7))
-                            .lineLimit(2)
+                VStack(alignment: .leading, spacing: 0) {
+                    if let old = toolInput?["old_string"] as? String, !old.isEmpty {
+                        DiffBlock(text: old, isAddition: false)
+                    }
+                    if let new = toolInput?["new_string"] as? String, !new.isEmpty {
+                        DiffBlock(text: new, isAddition: true)
                     }
                 }
-                if let new = toolInput?["new_string"] as? String {
-                    HStack(alignment: .top, spacing: 4) {
-                        Text("+")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
-                        Text(new.prefix(120))
-                            .font(.system(size: 9.5, design: .monospaced))
-                            .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4).opacity(0.7))
-                            .lineLimit(2)
-                    }
-                }
+                .background(Color.black.opacity(0.3))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+                )
             }
 
         case "Write":
@@ -617,6 +754,54 @@ private struct ApprovalBar: View {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Diff Block (line-by-line red/green diff)
+
+private struct DiffBlock: View {
+    let text: String
+    let isAddition: Bool
+
+    private let maxLines = 8
+
+    var body: some View {
+        let lines = text.components(separatedBy: "\n")
+        let displayLines = Array(lines.prefix(maxLines))
+        let truncated = lines.count > maxLines
+
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(displayLines.enumerated()), id: \.offset) { _, line in
+                HStack(spacing: 0) {
+                    Text(isAddition ? "+" : "−")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(isAddition ? Color(red: 0.3, green: 0.85, blue: 0.4) : Color(red: 1.0, green: 0.4, blue: 0.4))
+                        .frame(width: 16)
+
+                    Text(line.isEmpty ? " " : line)
+                        .font(.system(size: 9.5, design: .monospaced))
+                        .foregroundStyle(isAddition
+                            ? Color(red: 0.3, green: 0.85, blue: 0.4).opacity(0.8)
+                            : Color(red: 1.0, green: 0.4, blue: 0.4).opacity(0.8))
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 1.5)
+                .padding(.horizontal, 6)
+                .background(isAddition
+                    ? Color(red: 0.3, green: 0.85, blue: 0.4).opacity(0.08)
+                    : Color(red: 1.0, green: 0.4, blue: 0.4).opacity(0.08))
+            }
+
+            if truncated {
+                Text("  … +\(lines.count - maxLines) more lines")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.3))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
             }
         }
     }
@@ -931,7 +1116,12 @@ private struct SessionListView: View {
                         SessionCard(
                             sessionId: sessionId,
                             session: session,
-                            isCompletion: onlySessionId != nil
+                            isCompletion: onlySessionId != nil,
+                            onChat: session.source == "claude" ? {
+                                withAnimation(NotchAnimation.open) {
+                                    appState.surface = .chat(sessionId: sessionId)
+                                }
+                            } : nil
                         )
                     }
                 }
@@ -1178,6 +1368,7 @@ private struct SessionCard: View {
     let sessionId: String
     let session: SessionSnapshot
     var isCompletion: Bool = false
+    var onChat: (() -> Void)? = nil
     @State private var hovering = false
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.aiMessageLines) private var aiMessageLines = SettingsDefaults.aiMessageLines
@@ -1189,9 +1380,9 @@ private struct SessionCard: View {
             return Color(red: 1.0, green: 0.45, blue: 0.35)
         }
         switch session.status {
-        case .processing, .running:              return Color(red: 0.3, green: 0.85, blue: 0.4)
-        case .waitingApproval, .waitingQuestion:  return Color(red: 1.0, green: 0.6, blue: 0.2)
-        case .idle:                               return .white
+        case .processing, .running:              return Color(red: 0.85, green: 0.47, blue: 0.34)
+        case .waitingApproval, .waitingQuestion:  return Color(red: 0.96, green: 0.65, blue: 0.14)
+        case .idle:                               return .white.opacity(0.85)
         }
     }
 
@@ -1199,7 +1390,7 @@ private struct SessionCard: View {
         HStack(alignment: .center, spacing: 8) {
             // Column 1: Character + subagent icons
             VStack(spacing: 3) {
-                MascotView(source: session.source, status: session.status, size: 32)
+                MascotView(source: session.source, status: session.status, size: 40)
                 if showAgentDetails && !session.subagents.isEmpty {
                     let sorted = session.subagents.values.sorted { $0.startTime < $1.startTime }
                     // Grid: 4 per row, 8px icons
@@ -1217,7 +1408,7 @@ private struct SessionCard: View {
                     }
                 }
             }
-            .frame(width: 36)
+            .frame(width: 44)
 
             // Column 2: Content
             VStack(alignment: .leading, spacing: 6) {
@@ -1316,7 +1507,13 @@ private struct SessionCard: View {
         .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(hovering ? Color.white.opacity(0.10) : Color.white.opacity(0.05))
+                .fill(hovering
+                    ? Color(red: 0.85, green: 0.47, blue: 0.34).opacity(0.12)
+                    : Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color(red: 0.85, green: 0.47, blue: 0.34).opacity(hovering ? 0.15 : 0), lineWidth: 0.5)
+                )
         )
         .padding(.horizontal, 6)
         .contentShape(Rectangle())
@@ -1324,6 +1521,8 @@ private struct SessionCard: View {
         .onTapGesture {
             if isCompletion {
                 TerminalActivator.activate(session: session, sessionId: sessionId)
+            } else if let onChat {
+                onChat()
             }
         }
     }
@@ -1833,6 +2032,47 @@ struct MiniAgentIcon: View {
     }
 }
 
+// MARK: - Claude Logo (Compact Bar)
+
+private struct ClaudeLogoCompact: View {
+    var size: CGFloat = 22
+
+    var body: some View {
+        ClaudeLogoShape()
+            .fill(Color(red: 0.85, green: 0.47, blue: 0.34))
+            .frame(width: size, height: size)
+    }
+}
+
+// MARK: - Lottie Animation Views
+
+private struct LottieLoadingSpinner: View {
+    var size: CGFloat = 16
+
+    var body: some View {
+        LottieView {
+            try await DotLottieFile.named("loading", bundle: .module)
+        }
+        .playing(loopMode: .loop)
+        .frame(width: size, height: size)
+    }
+}
+
+private struct LottieTypingIndicator: View {
+    var size: CGFloat = 16
+
+    var body: some View {
+        LottieView {
+            if let file = try? await DotLottieFile.named("typing", bundle: .module) {
+                return file
+            }
+            return try await DotLottieFile.named("loading", bundle: .module)
+        }
+        .playing(loopMode: .loop)
+        .frame(width: size, height: size)
+    }
+}
+
 // MARK: - Shared Helpers
 
 /// Inline markdown rendering (bold, italic, code, links)
@@ -1903,4 +2143,740 @@ private func stripDirectives(_ text: String) -> String {
 
     let cleaned = result.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     return cleaned
+}
+
+// MARK: - Notch Settings View (inline in the island)
+
+private struct NotchSettingsView: View {
+    var appState: AppState
+    @ObservedObject private var l10n = L10n.shared
+
+    // General
+    @AppStorage(SettingsKey.appLanguage) private var appLanguage = "system"
+    @AppStorage(SettingsKey.displayChoice) private var displayChoice = SettingsDefaults.displayChoice
+    @State private var launchAtLogin: Bool = SettingsManager.shared.launchAtLogin
+
+    // Behavior
+    @AppStorage(SettingsKey.hideInFullscreen) private var hideInFullscreen = SettingsDefaults.hideInFullscreen
+    @AppStorage(SettingsKey.hideWhenNoSession) private var hideWhenNoSession = SettingsDefaults.hideWhenNoSession
+    @AppStorage(SettingsKey.smartSuppress) private var smartSuppress = SettingsDefaults.smartSuppress
+    @AppStorage(SettingsKey.collapseOnMouseLeave) private var collapseOnMouseLeave = SettingsDefaults.collapseOnMouseLeave
+    @AppStorage(SettingsKey.sessionTimeout) private var sessionTimeout = SettingsDefaults.sessionTimeout
+    @AppStorage(SettingsKey.maxToolHistory) private var maxToolHistory = SettingsDefaults.maxToolHistory
+    @AppStorage(SettingsKey.rotationInterval) private var rotationInterval = SettingsDefaults.rotationInterval
+
+    // Appearance
+    @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
+    @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
+    @AppStorage(SettingsKey.aiMessageLines) private var aiMessageLines = SettingsDefaults.aiMessageLines
+    @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
+    @AppStorage(SettingsKey.mascotSpeed) private var mascotSpeed = SettingsDefaults.mascotSpeed
+
+    // Sound
+    @AppStorage(SettingsKey.soundEnabled) private var soundEnabled = SettingsDefaults.soundEnabled
+    @AppStorage(SettingsKey.soundVolume) private var soundVolume = SettingsDefaults.soundVolume
+    @AppStorage(SettingsKey.soundSessionStart) private var soundSessionStart = SettingsDefaults.soundSessionStart
+    @AppStorage(SettingsKey.soundTaskComplete) private var soundTaskComplete = SettingsDefaults.soundTaskComplete
+    @AppStorage(SettingsKey.soundTaskError) private var soundTaskError = SettingsDefaults.soundTaskError
+    @AppStorage(SettingsKey.soundApprovalNeeded) private var soundApprovalNeeded = SettingsDefaults.soundApprovalNeeded
+    @AppStorage(SettingsKey.soundPromptSubmit) private var soundPromptSubmit = SettingsDefaults.soundPromptSubmit
+    @AppStorage(SettingsKey.soundBoot) private var soundBoot = SettingsDefaults.soundBoot
+
+    // Usage
+    @AppStorage(SettingsKey.usageWarningThreshold) private var usageWarningThreshold = SettingsDefaults.usageWarningThreshold
+    @AppStorage(SettingsKey.claudeApiKeyFiveHourLimit) private var apiKeyFhLimit = SettingsDefaults.claudeApiKeyFiveHourLimit
+    @AppStorage(SettingsKey.claudeApiKeyWeeklyLimit) private var apiKeyWkLimit = SettingsDefaults.claudeApiKeyWeeklyLimit
+
+    private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 16) {
+                headerBar
+
+                // General
+                SettingsSection(title: "通用") {
+                    SettingsToggle(label: "开机自启", icon: "power", isOn: $launchAtLogin)
+                        .onChange(of: launchAtLogin) { _, v in SettingsManager.shared.launchAtLogin = v }
+                    SettingsOptionRow(label: "语言", icon: "globe", options: [("system", "系统"), ("en", "EN"), ("zh", "中文")], selection: $appLanguage)
+                    DisplayPickerRow(selection: $displayChoice)
+                }
+
+                // Behavior
+                SettingsSection(title: "行为") {
+                    SettingsToggle(label: "全屏时隐藏", icon: "arrow.up.left.and.arrow.down.right", isOn: $hideInFullscreen)
+                    SettingsToggle(label: "无会话时隐藏", icon: "eye.slash", isOn: $hideWhenNoSession)
+                    SettingsToggle(label: "智能抑制", icon: "brain", isOn: $smartSuppress)
+                    SettingsToggle(label: "鼠标离开收起", icon: "rectangle.compress.vertical", isOn: $collapseOnMouseLeave)
+                    SettingsOptionRow(label: "会话超时", icon: "clock", options: [(0, "不清理"), (10, "10分"), (30, "30分"), (60, "1时"), (120, "2时")], selection: $sessionTimeout)
+                    SettingsOptionRow(label: "工具历史", icon: "clock.arrow.circlepath", options: [(10, "10"), (20, "20"), (50, "50"), (100, "100")], selection: $maxToolHistory)
+                    SettingsOptionRow(label: "轮转间隔", icon: "arrow.triangle.2.circlepath", options: [(3, "3s"), (5, "5s"), (8, "8s"), (10, "10s")], selection: $rotationInterval)
+                }
+
+                // Appearance
+                SettingsSection(title: "外观") {
+                    SettingsStepper(label: "最大会话数", value: $maxVisibleSessions, range: 1...20)
+                    SettingsOptionRow(label: "字体大小", icon: "textformat.size", options: [(10, "10"), (11, "11"), (12, "12"), (13, "13")], selection: $contentFontSize)
+                    SettingsOptionRow(label: "AI回复行数", icon: "text.alignleft", options: [(1, "1行"), (2, "2行"), (3, "3行"), (5, "5行"), (0, "∞")], selection: $aiMessageLines)
+                    SettingsToggle(label: "显示 Agent 详情", icon: "info.circle", isOn: $showAgentDetails)
+                    HStack(spacing: 10) {
+                        Image(systemName: "hare")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.4))
+                            .frame(width: 18)
+                        Text("吉祥物速度")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.85))
+                        Spacer()
+                        Text(mascotSpeed == 0 ? "关" : String(format: "%.1f×", Double(mascotSpeed) / 100.0))
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundStyle(claudeOrange.opacity(0.7))
+                            .frame(width: 36)
+                    }
+                    .frame(height: 30)
+                    Slider(value: Binding(get: { Double(mascotSpeed) }, set: { mascotSpeed = Int($0) }), in: 0...300, step: 25)
+                        .tint(claudeOrange)
+                }
+
+                // Sound
+                SettingsSection(title: "音效") {
+                    SettingsToggle(label: "启用音效", icon: soundEnabled ? "speaker.wave.2" : "speaker.slash", isOn: $soundEnabled)
+                    if soundEnabled {
+                        HStack(spacing: 6) {
+                            Image(systemName: "speaker.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.white.opacity(0.4))
+                            Slider(value: Binding(get: { Double(soundVolume) }, set: { soundVolume = Int($0) }), in: 0...100)
+                                .tint(claudeOrange)
+                            Text("\(soundVolume)%")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.5))
+                                .frame(width: 28)
+                        }
+                        .frame(height: 22)
+                        SoundToggleRow(label: "启动音", icon: "play.circle", soundName: "8bit_boot", isOn: $soundBoot)
+                        SoundToggleRow(label: "会话开始", icon: "play", soundName: "8bit_start", isOn: $soundSessionStart)
+                        SoundToggleRow(label: "任务完成", icon: "checkmark.circle", soundName: "8bit_complete", isOn: $soundTaskComplete)
+                        SoundToggleRow(label: "任务出错", icon: "exclamationmark.triangle", soundName: "8bit_error", isOn: $soundTaskError)
+                        SoundToggleRow(label: "需要审批", icon: "hand.raised", soundName: "8bit_approval", isOn: $soundApprovalNeeded)
+                        SoundToggleRow(label: "提交确认", icon: "paperplane", soundName: "8bit_submit", isOn: $soundPromptSubmit)
+                    }
+                }
+
+                // Usage
+                SettingsSection(title: "用量告警") {
+                    HStack(spacing: 2) {
+                        ForEach([0, 50, 70, 80, 90, 95], id: \.self) { pct in
+                            let selected = usageWarningThreshold == pct
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.15)) { usageWarningThreshold = pct }
+                            } label: {
+                                Text(pct == 0 ? "Off" : "\(pct)%")
+                                    .font(.system(size: 9, weight: selected ? .bold : .regular, design: .monospaced))
+                                    .foregroundStyle(selected ? claudeOrange : .white.opacity(0.35))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 3)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(selected ? claudeOrange.opacity(0.15) : .clear)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Divider().background(.white.opacity(0.06))
+
+                    UsageServiceListView()
+
+                    let hasApiKey = UsageTracker.shared.services.contains { $0.planName == "API Key" }
+                    if hasApiKey {
+                        Divider().background(.white.opacity(0.06))
+                        SettingsInput(label: "5h", value: $apiKeyFhLimit, unit: "tokens")
+                        SettingsInput(label: "7d", value: $apiKeyWkLimit, unit: "tokens")
+                    }
+                }
+
+                // Hooks
+                SettingsSection(title: "Hooks") {
+                    NotchHooksSection()
+                }
+
+                // About
+                SettingsSection(title: "飞行员") {
+                    HStack(spacing: 10) {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.4))
+                            .frame(width: 18)
+                        Text("名字")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.85))
+                        Spacer()
+                        TextField("", text: Binding(
+                            get: { MembershipTracker.shared.pilotName },
+                            set: { MembershipTracker.shared.pilotName = $0 }
+                        ))
+                        .font(.system(size: 11, design: .monospaced))
+                        .textFieldStyle(.plain)
+                        .multilineTextAlignment(.trailing)
+                        .foregroundStyle(claudeOrange)
+                        .frame(width: 120)
+                    }
+                    .frame(height: 30)
+                }
+
+                SettingsSection(title: "关于") {
+                    HStack(spacing: 12) {
+                        AppLogoView(size: 40, showBackground: false)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(Bundle.main.infoDictionary?["CFBundleName"] as? String ?? "Oh My Island")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.9))
+                            Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
+                        Spacer()
+                    }
+                    .frame(height: 36)
+                }
+
+                // Actions
+                SettingsSection(title: "") {
+                    UpdateStatusRow()
+                    SettingsActionButton(label: "退出", icon: "power", tint: Color(red: 1.0, green: 0.45, blue: 0.35)) {
+                        NSApplication.shared.terminate(nil)
+                    }
+                }
+
+                Spacer().frame(height: 4)
+            }
+        }
+        .frame(maxHeight: 400)
+    }
+
+    private var headerBar: some View {
+        HStack {
+            Button {
+                withAnimation(NotchAnimation.open) { appState.surface = .sessionList }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("返回")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                }
+                .foregroundStyle(claudeOrange.opacity(0.7))
+            }
+            .buttonStyle(.plain)
+            Spacer()
+            HStack(spacing: 6) {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(claudeOrange.opacity(0.6))
+                Text("设置")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+            Spacer()
+            Color.clear.frame(width: 50)
+        }
+        .padding(.bottom, 4)
+    }
+}
+
+private struct NotchHooksSection: View {
+    @State private var refreshKey = 0
+
+    private let cliList: [(name: String, source: String)] = [
+        ("Claude Code", "claude"),
+        ("Codex", "codex"),
+        ("Gemini", "gemini"),
+        ("Cursor", "cursor"),
+        ("Qoder", "qoder"),
+        ("Factory", "droid"),
+        ("CodeBuddy", "codebuddy"),
+        ("OpenCode", "opencode"),
+    ]
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ForEach(cliList, id: \.source) { cli in
+                let exists = ConfigInstaller.cliExists(source: cli.source)
+                let installed = exists && ConfigInstaller.isInstalled(source: cli.source)
+                let enabled = ConfigInstaller.isEnabled(source: cli.source)
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(statusColor(exists: exists, installed: installed, enabled: enabled))
+                        .frame(width: 6, height: 6)
+                    Text(cli.name)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(exists ? 0.8 : 0.3))
+                    Spacer()
+                    Text(statusText(exists: exists, installed: installed, enabled: enabled))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.4))
+                }
+                .frame(height: 18)
+                .id("\(cli.source)-\(refreshKey)")
+            }
+
+            Divider().background(.white.opacity(0.06))
+
+            HStack(spacing: 8) {
+                SettingsActionButton(label: "重新安装", icon: "arrow.triangle.2.circlepath") {
+                    for cli in ConfigInstaller.allCLIs where ConfigInstaller.cliExists(source: cli.source) {
+                        UserDefaults.standard.set(true, forKey: "cli_enabled_\(cli.source)")
+                    }
+                    _ = ConfigInstaller.install()
+                    refreshKey += 1
+                }
+                SettingsActionButton(label: "卸载", icon: "trash", tint: Color(red: 0.9, green: 0.3, blue: 0.3)) {
+                    ConfigInstaller.uninstall()
+                    refreshKey += 1
+                }
+            }
+        }
+    }
+
+    private func statusColor(exists: Bool, installed: Bool, enabled: Bool) -> Color {
+        if !exists { return .gray.opacity(0.4) }
+        if !enabled { return .orange }
+        if installed { return .green }
+        return .yellow
+    }
+
+    private func statusText(exists: Bool, installed: Bool, enabled: Bool) -> String {
+        if !exists { return "未检测" }
+        if !enabled { return "已禁用" }
+        if installed { return "已安装" }
+        return "未安装"
+    }
+}
+
+private struct SettingsOptionRow<T: Hashable>: View {
+    let label: String
+    let icon: String
+    let options: [(T, String)]
+    @Binding var selection: T
+
+    private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.4))
+                .frame(width: 18)
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.85))
+            Spacer()
+            HStack(spacing: 2) {
+                ForEach(Array(options.enumerated()), id: \.offset) { _, opt in
+                    let selected = selection == opt.0
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { selection = opt.0 }
+                    } label: {
+                        Text(opt.1)
+                            .font(.system(size: 10, weight: selected ? .semibold : .regular, design: .rounded))
+                            .foregroundStyle(selected ? claudeOrange : .white.opacity(0.4))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(selected ? claudeOrange.opacity(0.15) : .clear)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .frame(height: 30)
+    }
+}
+
+private struct SettingsSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: () -> Content
+
+    private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !title.isEmpty {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(claudeOrange.opacity(0.7))
+                    .textCase(.uppercase)
+                    .kerning(0.8)
+                    .padding(.leading, 4)
+            }
+            VStack(spacing: 4) {
+                content()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.white.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(.white.opacity(0.04), lineWidth: 0.5)
+                    )
+            )
+        }
+    }
+}
+
+private struct SettingsToggle: View {
+    let label: String
+    let icon: String
+    @Binding var isOn: Bool
+
+    private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(isOn ? claudeOrange.opacity(0.8) : .white.opacity(0.4))
+                .frame(width: 18)
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.85))
+            Spacer()
+            Toggle("", isOn: $isOn)
+                .toggleStyle(.switch)
+                .tint(claudeOrange)
+                .scaleEffect(0.7)
+                .frame(width: 40)
+        }
+        .frame(height: 30)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct SettingsStepper: View {
+    let label: String
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+
+    private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.85))
+            Spacer()
+            HStack(spacing: 6) {
+                Button {
+                    withAnimation(.spring(response: 0.2)) { if value > range.lowerBound { value -= 1 } }
+                } label: {
+                    Image(systemName: "minus")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(.white.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                Text("\(value)")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(claudeOrange)
+                    .frame(width: 30)
+                Button {
+                    withAnimation(.spring(response: 0.2)) { if value < range.upperBound { value += 1 } }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(.white.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(height: 30)
+    }
+}
+
+private struct SettingsInput: View {
+    let label: String
+    @Binding var value: Int
+    let unit: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.5))
+                .frame(width: 22, alignment: .leading)
+            TextField("", value: $value, format: .number)
+                .font(.system(size: 10, design: .monospaced))
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(RoundedRectangle(cornerRadius: 4).fill(.white.opacity(0.06)))
+                .foregroundStyle(.white.opacity(0.7))
+            Text(unit)
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.3))
+        }
+    }
+}
+
+private struct SettingsActionButton: View {
+    let label: String
+    let icon: String
+    var tint: Color = Color(red: 0.85, green: 0.47, blue: 0.34)
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .medium))
+                Text(label)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+            }
+            .foregroundStyle(tint.opacity(hovering ? 1.0 : 0.8))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(tint.opacity(hovering ? 0.18 : 0.1))
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+// MARK: - Update Status Row
+
+private struct UpdateStatusRow: View {
+    @ObservedObject private var checker = UpdateChecker.shared
+    private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
+
+    var body: some View {
+        VStack(spacing: 6) {
+            switch checker.status {
+            case .idle:
+                SettingsActionButton(label: "检查更新", icon: "arrow.down.circle") {
+                    checker.checkForUpdates(silent: false)
+                }
+            case .checking:
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                    Text("正在检查…")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+                .frame(height: 30)
+            case .upToDate(let version):
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.green)
+                    Text("已是最新 v\(version)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.7))
+                    Spacer()
+                    Button {
+                        checker.status = .idle
+                    } label: {
+                        Text("关闭")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .frame(height: 30)
+            case .available(let version, _):
+                VStack(spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(claudeOrange)
+                        Text("新版本 v\(version) 可用")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.9))
+                        Spacer()
+                    }
+                    SettingsActionButton(label: "前往下载", icon: "safari") {
+                        checker.openRelease()
+                    }
+                }
+            case .failed(let msg):
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.yellow)
+                    Text(msg)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.6))
+                    Spacer()
+                    Button {
+                        checker.checkForUpdates(silent: false)
+                    } label: {
+                        Text("重试")
+                            .font(.system(size: 10))
+                            .foregroundStyle(claudeOrange)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .frame(height: 30)
+            }
+        }
+    }
+}
+
+// MARK: - Display Picker Row
+
+private struct DisplayPickerRow: View {
+    @Binding var selection: String
+    private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
+
+    private var screenOptions: [(String, String)] {
+        var opts: [(String, String)] = [("auto", "自动")]
+        for (index, screen) in NSScreen.screens.enumerated() {
+            let name = screen.localizedName
+            let isBuiltin = name.contains("Built-in") || name.contains("内置")
+            opts.append(("screen_\(index)", isBuiltin ? "内置" : name))
+        }
+        return opts
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "display")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.4))
+                .frame(width: 18)
+            Text("显示器")
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.85))
+            Spacer()
+            HStack(spacing: 2) {
+                ForEach(screenOptions, id: \.0) { tag, label in
+                    let selected = selection == tag
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { selection = tag }
+                    } label: {
+                        Text(label)
+                            .font(.system(size: 10, weight: selected ? .semibold : .regular, design: .rounded))
+                            .foregroundStyle(selected ? claudeOrange : .white.opacity(0.4))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(selected ? claudeOrange.opacity(0.15) : .clear)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .frame(height: 30)
+    }
+}
+
+// MARK: - Sound Toggle with Preview Button
+
+private struct SoundToggleRow: View {
+    let label: String
+    let icon: String
+    let soundName: String
+    @Binding var isOn: Bool
+    private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(isOn ? claudeOrange.opacity(0.8) : .white.opacity(0.4))
+                .frame(width: 18)
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.85))
+            Spacer()
+            Button {
+                SoundManager.shared.preview(soundName)
+            } label: {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+            .buttonStyle(.plain)
+            Toggle("", isOn: $isOn)
+                .toggleStyle(.switch)
+                .tint(claudeOrange)
+                .scaleEffect(0.7)
+                .frame(width: 40)
+        }
+        .frame(height: 30)
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Usage Service List
+
+private struct UsageServiceListView: View {
+    private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
+    @State private var isRefreshing = false
+
+    var body: some View {
+        VStack(spacing: 4) {
+            let services = UsageTracker.shared.services
+            if services.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.3))
+                    Text("未检测到服务")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.4))
+                    Spacer()
+                }
+                .frame(height: 24)
+            } else {
+                ForEach(services) { svc in
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(svc.service.color)
+                            .frame(width: 6, height: 6)
+                        Text(svc.service.rawValue)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white.opacity(0.8))
+                        if let plan = svc.planName {
+                            Text(plan)
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.35))
+                        }
+                        Spacer()
+                        if let primary = svc.primaryUsage {
+                            Text("\(primary.percentInt)%")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(svc.color)
+                        }
+                    }
+                    .frame(height: 20)
+                }
+            }
+
+            SettingsActionButton(label: isRefreshing ? "刷新中…" : "刷新用量", icon: "arrow.clockwise") {
+                guard !isRefreshing else { return }
+                isRefreshing = true
+                Task {
+                    await UsageTracker.shared.refresh()
+                    isRefreshing = false
+                }
+            }
+        }
+    }
 }

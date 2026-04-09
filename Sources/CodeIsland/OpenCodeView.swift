@@ -18,6 +18,7 @@ struct OpenCodeView: View {
     private static let kbBase   = Color(red: 0.12, green: 0.12, blue: 0.14)
     private static let kbKey    = Color(red: 0.30, green: 0.30, blue: 0.32)
     private static let kbHi     = Color.white
+    private static let tieC = Color(red: 0.55, green: 0.55, blue: 0.57)  // matching frame gray
 
     var body: some View {
         ZStack {
@@ -142,6 +143,16 @@ struct OpenCodeView: View {
         c.fill(Path(v.r(10, 13.5, 1, 1.5)), with: .color(Self.legC))
     }
 
+    private func drawTie(_ c: GraphicsContext, v: V, dy: CGFloat) {
+        // Knot
+        c.fill(Path(v.r(7, 13, 1, 0.7, dy: dy)), with: .color(Self.tieC))
+        // Tie body
+        c.fill(Path(v.r(6.5, 13.5, 2, 1, dy: dy)), with: .color(Self.tieC))
+        c.fill(Path(v.r(6.8, 14.3, 1.4, 0.7, dy: dy)), with: .color(Self.tieC))
+        // Light stripe
+        c.fill(Path(v.r(7.2, 13.3, 0.5, 1.5, dy: dy)), with: .color(Self.faceC.opacity(0.2)))
+    }
+
     // ━━━━━━ SLEEP ━━━━━━
     private var sleepScene: some View {
         ZStack {
@@ -182,6 +193,7 @@ struct OpenCodeView: View {
             drawShadow(c, v: v, width: 7 + abs(float) * 0.3, opacity: 0.2)
             drawLegs(c, v: v)
             drawBlock(c, v: v, dy: float)
+            drawTie(c, v: v, dy: float)
             drawFace(c, v: v, dy: float, color: Self.faceC.opacity(0.4), eyeScale: 0.3)
         }
     }
@@ -223,6 +235,7 @@ struct OpenCodeView: View {
                    with: .color(Self.kbHi.opacity(0.9)))
 
             drawBlock(c, v: v, dy: bounce)
+            drawTie(c, v: v, dy: bounce)
             drawFace(c, v: v, dy: bounce, eyeScale: blink)
         }
     }
@@ -277,6 +290,7 @@ struct OpenCodeView: View {
 
             c.translateBy(x: shakeX * v.s, y: 0)
             drawBlock(c, v: v, dy: jumpY, squashX: squashX, squashY: squashY)
+            drawTie(c, v: v, dy: jumpY)
             drawFace(c, v: v, dy: jumpY, eyeScale: pct > 0.03 && pct < 0.15 ? 1.3 : 1.0)
             c.translateBy(x: -shakeX * v.s, y: 0)
 

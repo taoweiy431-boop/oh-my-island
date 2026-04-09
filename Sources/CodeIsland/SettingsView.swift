@@ -9,6 +9,7 @@ enum SettingsPage: String, Identifiable, Hashable {
     case appearance
     case mascots
     case sound
+    case usage
     case hooks
     case about
 
@@ -21,6 +22,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .appearance: return "paintbrush.fill"
         case .mascots: return "person.2.fill"
         case .sound: return "speaker.wave.2.fill"
+        case .usage: return "chart.bar.fill"
         case .hooks: return "link.circle.fill"
         case .about: return "info.circle.fill"
         }
@@ -28,13 +30,14 @@ enum SettingsPage: String, Identifiable, Hashable {
 
     var color: Color {
         switch self {
-        case .general: return .gray
-        case .behavior: return .orange
-        case .appearance: return .blue
-        case .mascots: return .pink
-        case .sound: return .green
-        case .hooks: return .purple
-        case .about: return .cyan
+        case .general: return Color(red: 0.85, green: 0.47, blue: 0.34)
+        case .behavior: return Color(red: 0.96, green: 0.65, blue: 0.14)
+        case .appearance: return Color(red: 0.55, green: 0.42, blue: 0.85)
+        case .mascots: return Color(red: 0.85, green: 0.35, blue: 0.55)
+        case .sound: return Color(red: 0.35, green: 0.72, blue: 0.55)
+        case .usage: return Color(red: 0.29, green: 0.87, blue: 0.50)
+        case .hooks: return Color(red: 0.72, green: 0.45, blue: 0.28)
+        case .about: return Color(red: 0.45, green: 0.62, blue: 0.85)
         }
     }
 }
@@ -45,8 +48,8 @@ private struct SidebarGroup: Hashable {
 }
 
 private let sidebarGroups: [SidebarGroup] = [
-    SidebarGroup(title: nil, pages: [.general, .behavior, .appearance, .mascots, .sound]),
-    SidebarGroup(title: "CodeIsland", pages: [.hooks, .about]),
+    SidebarGroup(title: nil, pages: [.general, .behavior, .appearance, .mascots, .sound, .usage]),
+    SidebarGroup(title: "Oh My Island", pages: [.hooks, .about]),
 ]
 
 // MARK: - Main View
@@ -67,12 +70,17 @@ struct SettingsView: View {
                     } header: {
                         if let title = group.title {
                             Text(title)
+                                .font(.system(size: 11, weight: .semibold, design: .serif))
+                                .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34).opacity(0.6))
+                                .textCase(.none)
+                                .kerning(0.3)
                         }
                     }
                 }
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(200)
+            .tint(Color(red: 0.85, green: 0.47, blue: 0.34))
         } detail: {
             Group {
                 switch selectedPage {
@@ -81,19 +89,17 @@ struct SettingsView: View {
                 case .appearance: AppearancePage()
                 case .mascots: MascotsPage()
                 case .sound: SoundPage()
+                case .usage: UsageSettingsPage()
                 case .hooks: HooksPage()
                 case .about: AboutPage()
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color(red: 0.08, green: 0.06, blue: 0.05))
         }
         .toolbar(removing: .sidebarToggle)
-    }
-}
-
-private struct PageHeader: View {
-    let title: String
-    var body: some View {
-        EmptyView()
+        .tint(Color(red: 0.85, green: 0.47, blue: 0.34))
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -104,7 +110,7 @@ private struct SidebarRow: View {
     var body: some View {
         Label {
             Text(l10n[page.rawValue])
-                .font(.system(size: 13))
+                .font(.system(size: 13, weight: .medium, design: .serif))
         } icon: {
             ZStack {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -146,12 +152,6 @@ private struct GeneralPage: View {
                     ForEach(Array(NSScreen.screens.enumerated()), id: \.offset) { index, screen in
                         let name = screen.localizedName
                         let isBuiltin = name.contains("Built-in") || name.contains("内置")
-                        let hasNotch: Bool = {
-                            if #available(macOS 12.0, *) {
-                                return screen.auxiliaryTopLeftArea != nil
-                            }
-                            return false
-                        }()
                         let label = isBuiltin ? l10n["builtin_display"] : name
                         Text(label).tag("screen_\(index)")
                     }
@@ -228,6 +228,103 @@ private struct BehaviorPage: View {
     }
 }
 
+// MARK: - Usage Page
+
+private struct UsageSettingsPage: View {
+    @AppStorage(SettingsKey.usageWarningThreshold) private var warningThreshold = SettingsDefaults.usageWarningThreshold
+    @AppStorage(SettingsKey.claudeApiKeyFiveHourLimit) private var fiveHourLimit = SettingsDefaults.claudeApiKeyFiveHourLimit
+    @AppStorage(SettingsKey.claudeApiKeyWeeklyLimit) private var weeklyLimit = SettingsDefaults.claudeApiKeyWeeklyLimit
+
+    private let thresholdOptions = [0, 50, 60, 70, 80, 90, 95]
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("告警阈值", selection: $warningThreshold) {
+                    Text("关闭").tag(0)
+                    ForEach(thresholdOptions.filter { $0 > 0 }, id: \.self) { pct in
+                        Text("\(pct)%").tag(pct)
+                    }
+                }
+
+                HStack {
+                    Text("当前状态")
+                    Spacer()
+                    let services = UsageTracker.shared.services
+                    if services.isEmpty {
+                        Text("未检测到服务")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("\(services.count) 个服务在线")
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                Button("立即刷新") {
+                    Task { await UsageTracker.shared.refresh() }
+                }
+            } header: {
+                Text("用量监控")
+            } footer: {
+                Text("超过告警阈值时，灵动岛边框会脉冲高亮，并发送 macOS 通知。设为「关闭」可禁用告警。")
+            }
+
+            Section {
+                HStack {
+                    Text("检测到的服务")
+                    Spacer()
+                }
+                let services = UsageTracker.shared.services
+                if services.isEmpty {
+                    Text("正在检测…")
+                        .foregroundStyle(.secondary)
+                        .italic()
+                } else {
+                    ForEach(services) { svc in
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(svc.service.color)
+                                .frame(width: 8, height: 8)
+                            Text(svc.service.rawValue)
+                            if let plan = svc.planName {
+                                Text(plan)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if let primary = svc.primaryUsage {
+                                Text("\(primary.percentInt)%")
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundStyle(svc.color)
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("服务状态")
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("5 小时窗口限额（tokens）")
+                    TextField("默认 5,000,000", value: $fiveHourLimit, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("7 天窗口限额（tokens）")
+                    TextField("默认 50,000,000", value: $weeklyLimit, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                }
+            } header: {
+                Text("API Key 模式 - 自定义限额")
+            } footer: {
+                Text("使用 API Key 而非 Pro 订阅时，CodeIsland 会从 JSONL 文件统计 token 用量。在此设置你的 API 额度上限来计算使用百分比。Pro 用户无需设置此项。")
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
 // MARK: - Hooks Page
 
 private struct HooksPage: View {
@@ -242,10 +339,6 @@ private struct HooksPage: View {
             cliStatuses[cli.source] = ConfigInstaller.isInstalled(source: cli.source)
         }
         cliStatuses["opencode"] = ConfigInstaller.isInstalled(source: "opencode")
-    }
-
-    private func statusText(installed: Bool, exists: Bool) -> String {
-        installed ? l10n["activated"] : (exists ? l10n["not_installed"] : l10n["not_detected"])
     }
 
     var body: some View {
@@ -466,7 +559,7 @@ private struct AppearancePreview: View {
 
     private var fs: CGFloat { CGFloat(fontSize) }
     private let green = Color(red: 0.3, green: 0.85, blue: 0.4)
-    private let aiColor = Color(red: 0.85, green: 0.47, blue: 0.34)
+    private let aiColor = Color(red: 0.55, green: 0.65, blue: 0.80)
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
@@ -555,14 +648,14 @@ private struct MascotsPage: View {
     @AppStorage(SettingsKey.mascotSpeed) private var mascotSpeed = SettingsDefaults.mascotSpeed
 
     private let mascotList: [(name: String, source: String, desc: String, color: Color)] = [
-        ("Clawd", "claude", "Claude Code", Color(red: 0.871, green: 0.533, blue: 0.427)),
-        ("Dex", "codex", "Codex (OpenAI)", Color(red: 0.92, green: 0.92, blue: 0.93)),
+        ("Claude", "claude", "Claude Code", Color(red: 0.85, green: 0.47, blue: 0.34)),
+        ("Codex", "codex", "Codex (OpenAI)", Color(red: 0.70, green: 0.70, blue: 0.72)),
         ("Gemini", "gemini", "Gemini CLI", Color(red: 0.278, green: 0.588, blue: 0.894)),
-        ("CursorBot", "cursor", "Cursor", Color(red: 0.96, green: 0.31, blue: 0.0)),
-        ("QoderBot", "qoder", "Qoder", Color(red: 0.165, green: 0.859, blue: 0.361)),
-        ("Droid", "droid", "Factory", Color(red: 0.835, green: 0.416, blue: 0.149)),
-        ("Buddy", "codebuddy", "CodeBuddy", Color(red: 0.424, green: 0.302, blue: 1.0)),
-        ("OpBot", "opencode", "OpenCode", Color(red: 0.55, green: 0.55, blue: 0.57)),
+        ("Cursor", "cursor", "Cursor", Color(red: 0.15, green: 0.14, blue: 0.12)),
+        ("Qoder", "qoder", "Qoder", Color(red: 0.165, green: 0.859, blue: 0.361)),
+        ("Factory", "droid", "Factory", Color(red: 0.835, green: 0.416, blue: 0.149)),
+        ("CodeBuddy", "codebuddy", "CodeBuddy", Color(red: 0.424, green: 0.302, blue: 1.0)),
+        ("OpenCode", "opencode", "OpenCode", Color(red: 0.55, green: 0.55, blue: 0.57)),
     ]
 
     var body: some View {
@@ -596,7 +689,6 @@ private struct MascotsPage: View {
                         name: mascot.name,
                         source: mascot.source,
                         desc: mascot.desc,
-                        color: mascot.color,
                         status: previewStatus
                     )
                 }
@@ -610,7 +702,6 @@ private struct MascotRow: View {
     let name: String
     let source: String
     let desc: String
-    let color: Color
     let status: AgentStatus
 
     var body: some View {
@@ -747,58 +838,111 @@ private struct AboutPage: View {
             Spacer()
 
             VStack(spacing: 24) {
-                AppLogoView(size: 100)
+                AppLogoView(size: 88)
 
                 VStack(spacing: 6) {
-                    Text("CodeIsland")
-                        .font(.system(size: 26, weight: .bold))
-                    Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                    Text(Bundle.main.infoDictionary?["CFBundleName"] as? String ?? "Oh My Island")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.9))
+                    Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.4))
                 }
 
                 VStack(spacing: 4) {
                     Text(l10n["about_desc1"])
                         .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.white.opacity(0.35))
                     Text(l10n["about_desc2"])
                         .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.white.opacity(0.35))
                 }
-
-                HStack(spacing: 12) {
-                    aboutLink("GitHub", icon: "chevron.left.forwardslash.chevron.right", url: "https://github.com/wxtsky/CodeIsland")
-                    aboutLink("Issues", icon: "ladybug", url: "https://github.com/wxtsky/CodeIsland/issues")
-                }
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 280)
             }
             .frame(maxWidth: .infinity)
 
             Spacer()
         }
     }
+}
 
-    private func aboutLink(_ title: String, icon: String, url: String) -> some View {
-        Button {
-            if let u = URL(string: url) { NSWorkspace.shared.open(u) }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: icon)
-                    .font(.system(size: 11))
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
+// MARK: - Claude Logo (Sunburst)
+
+private struct ClaudeLogoAbout: View {
+    var size: CGFloat = 48
+    private static let color = Color(red: 0.85, green: 0.47, blue: 0.34)
+    fileprivate static let svgPath = "m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"
+
+    var body: some View {
+        ClaudeLogoAboutShape()
+            .fill(Self.color)
+            .frame(width: size, height: size)
+    }
+}
+
+private struct ClaudeLogoAboutShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let scale = min(rect.width, rect.height) / 24.0
+        let transform = CGAffineTransform(scaleX: scale, y: scale)
+            .concatenating(CGAffineTransform(translationX: rect.minX, y: rect.minY))
+        return parseSVGPath(ClaudeLogoAbout.svgPath).applying(transform)
+    }
+
+    private func parseSVGPath(_ d: String) -> Path {
+        var path = Path()
+        var x: CGFloat = 0, y: CGFloat = 0
+        var i = d.startIndex
+        var cmd: Character = "m"
+
+        func skipWS() {
+            while i < d.endIndex && (d[i] == " " || d[i] == ",") { i = d.index(after: i) }
+        }
+        func peekNum() -> Bool {
+            guard i < d.endIndex else { return false }
+            let c = d[i]; return c == "-" || c == "." || c.isNumber
+        }
+        func num() -> CGFloat {
+            skipWS()
+            var s = ""
+            if i < d.endIndex && d[i] == "-" { s.append(d[i]); i = d.index(after: i) }
+            var hasDot = false
+            while i < d.endIndex {
+                let c = d[i]
+                if c == "." { if hasDot { break }; hasDot = true; s.append(c); i = d.index(after: i) }
+                else if c.isNumber { s.append(c); i = d.index(after: i) }
+                else { break }
             }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-            )
+            return CGFloat(Double(s) ?? 0)
         }
-        .buttonStyle(.plain)
-        .onHover { h in
-            if h { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+
+        while i < d.endIndex {
+            skipWS(); guard i < d.endIndex else { break }
+            let c = d[i]
+            if c.isLetter { cmd = c; i = d.index(after: i) }
+            switch cmd {
+            case "m": let dx = num(), dy = num(); x += dx; y += dy; path.move(to: CGPoint(x: x, y: y)); cmd = "l"
+            case "M": x = num(); y = num(); path.move(to: CGPoint(x: x, y: y)); cmd = "L"
+            case "l": let dx = num(), dy = num(); x += dx; y += dy; path.addLine(to: CGPoint(x: x, y: y))
+            case "L": x = num(); y = num(); path.addLine(to: CGPoint(x: x, y: y))
+            case "h": x += num(); path.addLine(to: CGPoint(x: x, y: y))
+            case "H": x = num(); path.addLine(to: CGPoint(x: x, y: y))
+            case "v": y += num(); path.addLine(to: CGPoint(x: x, y: y))
+            case "V": y = num(); path.addLine(to: CGPoint(x: x, y: y))
+            case "c":
+                let dx1 = num(), dy1 = num(), dx2 = num(), dy2 = num(), dx = num(), dy = num()
+                path.addCurve(to: CGPoint(x: x+dx, y: y+dy), control1: CGPoint(x: x+dx1, y: y+dy1), control2: CGPoint(x: x+dx2, y: y+dy2))
+                x += dx; y += dy
+            case "C":
+                let x1 = num(), y1 = num(), x2 = num(), y2 = num(); x = num(); y = num()
+                path.addCurve(to: CGPoint(x: x, y: y), control1: CGPoint(x: x1, y: y1), control2: CGPoint(x: x2, y: y2))
+            case "Z", "z": path.closeSubpath()
+            default: i = d.index(after: i)
+            }
+            skipWS()
+            if i < d.endIndex && peekNum() && "mlhvcMLHVC".contains(cmd) { continue }
         }
+        return path
     }
 }
 
@@ -830,7 +974,7 @@ private struct BehaviorToggleRow: View {
 /// Canvas-based notch animation with smooth interpolation.
 private struct NotchMiniAnim: View {
     let animation: BehaviorAnim
-    private let orange = Color(red: 0.96, green: 0.65, blue: 0.14)
+    private let accentCol = Color(red: 0.55, green: 0.65, blue: 0.80)
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.03)) { ctx in
@@ -875,10 +1019,10 @@ private struct NotchMiniAnim: View {
         let eyeGap: CGFloat = h > 16 ? 5 : 3
         c.fill(Path(CGRect(x: sz.width / 2 - eyeGap - eyeSize / 2, y: eyeY,
                            width: eyeSize, height: eyeSize)),
-               with: .color(orange.opacity(op)))
+               with: .color(accentCol.opacity(op)))
         c.fill(Path(CGRect(x: sz.width / 2 + eyeGap - eyeSize / 2, y: eyeY,
                            width: eyeSize, height: eyeSize)),
-               with: .color(orange.opacity(op)))
+               with: .color(accentCol.opacity(op)))
 
         // Content lines — only when expanded
         if h > 16 {
@@ -1021,30 +1165,29 @@ private struct NotchMiniAnim: View {
 struct AppLogoView: View {
     var size: CGFloat = 100
     var showBackground: Bool = true
-    private let orange = Color(red: 0.96, green: 0.65, blue: 0.14)
+    private let eyeCol = Color(red: 0.55, green: 0.65, blue: 0.80)
 
     var body: some View {
         Canvas { ctx, sz in
-            // macOS icon standard: ~10% padding on each side
             let inset = sz.width * 0.1
             let contentRect = CGRect(x: inset, y: inset, width: sz.width - inset * 2, height: sz.height - inset * 2)
             let px = contentRect.width / 16
             if showBackground {
                 let bgPath = Path(roundedRect: contentRect, cornerRadius: contentRect.width * 0.22, style: .continuous)
-                ctx.fill(bgPath, with: .color(.white))
+                ctx.fill(bgPath, with: .linearGradient(
+                    Gradient(colors: [Color(white: 0.14), Color(white: 0.08)]),
+                    startPoint: CGPoint(x: 0, y: 0),
+                    endPoint: CGPoint(x: sz.width, y: sz.height)))
             }
-            // Notch pill
-            let pillColor = showBackground ? Color(white: 0.1) : Color(white: 0.5)
-            let pillRect = CGRect(x: contentRect.minX + px * 3, y: contentRect.minY + px * 6, width: px * 10, height: px * 4)
-            ctx.fill(Path(roundedRect: pillRect, cornerRadius: px * 2, style: .continuous), with: .color(pillColor))
-            // Eyes
-            ctx.fill(Path(CGRect(x: contentRect.minX + px * 5, y: contentRect.minY + px * 7, width: px * 2, height: px * 2)), with: .color(orange))
-            ctx.fill(Path(CGRect(x: contentRect.minX + px * 9, y: contentRect.minY + px * 7, width: px * 2, height: px * 2)), with: .color(orange))
-            // Pupils
-            ctx.fill(Path(CGRect(x: contentRect.minX + px * 6, y: contentRect.minY + px * 7, width: px, height: px)), with: .color(.white))
-            ctx.fill(Path(CGRect(x: contentRect.minX + px * 10, y: contentRect.minY + px * 7, width: px, height: px)), with: .color(.white))
+            let pillRect = CGRect(x: contentRect.minX + px * 3, y: contentRect.minY + px * 5.5, width: px * 10, height: px * 5)
+            ctx.fill(Path(roundedRect: pillRect, cornerRadius: px * 2.5, style: .continuous),
+                     with: .color(showBackground ? Color(white: 0.04) : Color(white: 0.5)))
+            ctx.fill(Path(ellipseIn: CGRect(x: contentRect.minX + px * 5, y: contentRect.minY + px * 7, width: px * 2, height: px * 2)),
+                     with: .color(eyeCol))
+            ctx.fill(Path(ellipseIn: CGRect(x: contentRect.minX + px * 9, y: contentRect.minY + px * 7, width: px * 2, height: px * 2)),
+                     with: .color(eyeCol))
         }
         .frame(width: size, height: size)
-        .shadow(color: .black.opacity(showBackground ? 0.15 : 0), radius: size * 0.12, y: size * 0.04)
+        .shadow(color: .black.opacity(showBackground ? 0.2 : 0), radius: size * 0.12, y: size * 0.04)
     }
 }

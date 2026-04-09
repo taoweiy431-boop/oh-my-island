@@ -36,8 +36,8 @@ class SettingsWindowController {
             defer: false
         )
         window.titleVisibility = .visible
-        window.title = L10n.shared["settings_title"]
-        window.backgroundColor = .windowBackgroundColor
+        window.title = "Claude Island Settings"
+        window.backgroundColor = NSColor(red: 0.08, green: 0.06, blue: 0.05, alpha: 1.0)
         window.contentView = hostingView
         window.contentMinSize = NSSize(width: min(560, screenW * 0.4), height: min(420, screenH * 0.4))
         window.toolbar = nil

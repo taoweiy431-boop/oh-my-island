@@ -10,14 +10,26 @@ enum IslandSurface: Equatable {
     case questionCard(sessionId: String)
     /// 自动展开显示完成通知
     case completionCard(sessionId: String)
+    /// 聊天视图
+    case chat(sessionId: String)
+    /// Buddy 卡片
+    case buddyCard
+    /// 用量监控面板
+    case usagePanel
+    /// 设置面板（嵌入灵动岛内）
+    case settingsPanel
+    /// 环境安全检测面板
+    case environmentCheck
+    /// 会员等级卡片
+    case membershipCard
 
     var isExpanded: Bool { self != .collapsed }
 
     /// 当前 surface 关联的 session ID（如有）
     var sessionId: String? {
         switch self {
-        case .collapsed, .sessionList: return nil
-        case .approvalCard(let id), .questionCard(let id), .completionCard(let id): return id
+        case .collapsed, .sessionList, .buddyCard, .usagePanel, .settingsPanel, .environmentCheck, .membershipCard: return nil
+        case .approvalCard(let id), .questionCard(let id), .completionCard(let id), .chat(let id): return id
         }
     }
 }

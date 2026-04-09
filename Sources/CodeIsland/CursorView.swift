@@ -19,6 +19,7 @@ struct CursorView: View {
     private static let kbBase  = Color(red: 0.12, green: 0.11, blue: 0.08)
     private static let kbKey   = Color(red: 0.30, green: 0.28, blue: 0.22)
     private static let kbHi    = Color(red: 0.93, green: 0.93, blue: 0.93)
+    private static let tieC = Color(red: 0.08, green: 0.07, blue: 0.04)  // matching dark body
 
     var body: some View {
         ZStack {
@@ -149,6 +150,16 @@ struct CursorView: View {
         c.fill(Path(v.r(8.5, 14.5, 1, 1.5)), with: .color(Self.edgeC))
     }
 
+    private func drawTie(_ c: GraphicsContext, v: V, dy: CGFloat) {
+        // Knot
+        c.fill(Path(v.r(7, 14, 1, 0.8, dy: dy)), with: .color(Self.tieC))
+        // Tie body (tapers down)
+        c.fill(Path(v.r(6.5, 14.5, 2, 1.2, dy: dy)), with: .color(Self.tieC))
+        c.fill(Path(v.r(6.8, 15.5, 1.4, 0.8, dy: dy)), with: .color(Self.tieC))
+        // Highlight stripe
+        c.fill(Path(v.r(7.2, 14.5, 0.6, 1.5, dy: dy)), with: .color(Self.lightC.opacity(0.3)))
+    }
+
     // ━━━━━━ SLEEP ━━━━━━
     private var sleepScene: some View {
         ZStack {
@@ -189,6 +200,7 @@ struct CursorView: View {
             drawShadow(c, v: v, width: 7 + abs(float) * 0.2, opacity: 0.2)
             drawLegs(c, v: v)
             drawGem(c, v: v, dy: float)
+            drawTie(c, v: v, dy: float)
             drawEyes(c, v: v, dy: float, scale: 0.3, color: Self.lightC.opacity(0.4))
         }
     }
@@ -231,6 +243,7 @@ struct CursorView: View {
                    with: .color(Self.kbHi.opacity(0.9)))
 
             drawGem(c, v: v, dy: bounce, shimmer: shimmer)
+            drawTie(c, v: v, dy: bounce)
             drawEyes(c, v: v, dy: bounce, scale: blink)
         }
     }
@@ -286,6 +299,7 @@ struct CursorView: View {
 
             c.translateBy(x: shakeX * v.s, y: 0)
             drawGem(c, v: v, dy: jumpY, shimmer: shimmer)
+            drawTie(c, v: v, dy: jumpY)
             let eyeColor: Color = (pct > 0.03 && pct < 0.55 && sin(pct * 25) > 0)
                 ? Self.alertC : Self.lightC
             drawEyes(c, v: v, dy: jumpY, scale: pct > 0.03 && pct < 0.15 ? 1.3 : 1.0,
